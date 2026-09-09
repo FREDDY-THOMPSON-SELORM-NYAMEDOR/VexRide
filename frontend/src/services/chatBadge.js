@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 let unreadCount = 0;
+let activeChatMatchId = null;
 const listeners = new Set();
 
 function notify() {
@@ -25,6 +26,14 @@ export function resetUnread() {
 export function setUnreadCount(count) {
   unreadCount = Math.max(0, Number(count) || 0);
   notify();
+}
+
+export function setActiveChatMatchId(matchId) {
+  activeChatMatchId = matchId == null ? null : String(matchId);
+}
+
+export function isActiveChatMatch(matchId) {
+  return activeChatMatchId !== null && activeChatMatchId === String(matchId);
 }
 
 export function useUnreadCount() {

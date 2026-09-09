@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const http = require('http');
 const { Server } = require('socket.io');
 const sequelize = require('./config/database');
@@ -206,6 +207,59 @@ app.get('/messages/unread/:userId', async (req, res) => {
   } catch (error) {
     console.error('Error loading unread messages:', error);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/places/search', async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (query.length < 2) return res.json({ success: true, locations: [] });
+
+  try {
+    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+      params: {
+        q: `${query}, Ghana`, format: 'jsonv2', addressdetails: 1, countrycodes: 'gh', limit: 6
+      },
+      headers: { 'User-Agent': 'VexRide/1.0 location search' },
+      timeout: 5000
+    });
+    const locations = response.data.map((place) => ({
+      id: place.place_id,
+      label: place.display_name,
+      subtitle: [place.address?.city, place.address?.town, place.address?.state]
+        .filter(Boolean)
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .join(', '),
+      latitude: Number(place.lat),
+      longitude: Number(place.lon)
+    }));
+    res.json({ success: true, locations });
+  } catch (error) {
+    console.error('Location search failed:', error.message);
+    res.status(502).json({ success: false, message: 'Location search is temporarily unavailable.' });
+  }
+});
+
+app.get('/places/reverse', async (req, res) => {
+  const latitude = Number(req.query.lat);
+  const longitude = Number(req.query.lon);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return res.status(400).json({ success: false, message: 'Valid latitude and longitude are required.' });
+  }
+
+  try {
+    const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+      params: { lat: latitude, lon: longitude, format: 'jsonv2', addressdetails: 1 },
+      headers: { 'User-Agent': 'VexRide/1.0 location search' },
+      timeout: 5000
+    });
+    const address = response.data.address || {};
+    const area = address.neighbourhood || address.suburb || address.quarter || address.village;
+    const city = address.city || address.town || address.municipality || address.county;
+    const label = [area, city, address.state].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ') || response.data.display_name;
+    res.json({ success: true, location: { label, subtitle: response.data.display_name, latitude, longitude } });
+  } catch (error) {
+    console.error('Reverse location search failed:', error.message);
+    res.status(502).json({ success: false, message: 'Could not identify the selected location.' });
   }
 });
 
