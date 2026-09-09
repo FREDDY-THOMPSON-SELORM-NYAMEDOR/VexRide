@@ -4,7 +4,7 @@ import { getJson, patchJson } from '../services/api';
 import ScreenLayout from '../components/ScreenLayout';
 import { getStoredUser } from '../services/user';
 import { joinChatRoom, markMessageSeen, onSocket, onSocketConnect, sendChatMessage, sendTypingStart, sendTypingStop, socket } from '../services/socket';
-import { resetUnread } from '../services/chatBadge';
+import { isActiveChatMatch, resetUnread, setActiveChatMatchId } from '../services/chatBadge';
 import { logError } from '../services/errorHandling';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
@@ -62,6 +62,8 @@ export default function ChatScreen({ navigation, route }) {
   useEffect(() => {
     if (!matchId) return undefined;
 
+    setActiveChatMatchId(matchId);
+
     const joinRoom = () => joinChatRoom(matchId);
     const cleanConnection = onSocketConnect(joinRoom);
     if (socket.connected) joinRoom();
@@ -118,6 +120,7 @@ export default function ChatScreen({ navigation, route }) {
 
     return () => {
       active = false;
+      if (isActiveChatMatch(matchId)) setActiveChatMatchId(null);
       cleanConnection();
       cleanMessage();
       cleanSeen();

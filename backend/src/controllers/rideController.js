@@ -4,6 +4,7 @@ const { buildLiveMatchState } = require('../utils/liveLocation');
 const { Op } = require('sequelize');
 
 let io;
+const LOCATION_MATCH_RADIUS_METERS = 2500;
 
 function setIO(socketIO) {
   io = socketIO;
@@ -28,6 +29,26 @@ function normalizeRideParticipant(record) {
 
 function broadcast(event, payload) {
   if (io) io.emit(event, payload);
+}
+
+function distanceMeters(firstLatitude, firstLongitude, secondLatitude, secondLongitude) {
+  const values = [firstLatitude, firstLongitude, secondLatitude, secondLongitude].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return Number.POSITIVE_INFINITY;
+  const [lat1, lon1, lat2, lon2] = values.map((value) => value * Math.PI / 180);
+  const deltaLat = lat2 - lat1;
+  const deltaLon = lon2 - lon1;
+  const arc = Math.sin(deltaLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc));
+}
+
+function locationsMatch(request, candidate, prefix, label) {
+  const requestLatitude = request[`${prefix}_latitude`];
+  const requestLongitude = request[`${prefix}_longitude`];
+  const candidateLatitude = candidate[`${prefix}_latitude`];
+  const candidateLongitude = candidate[`${prefix}_longitude`];
+  const coordinateDistance = distanceMeters(requestLatitude, requestLongitude, candidateLatitude, candidateLongitude);
+  if (coordinateDistance <= LOCATION_MATCH_RADIUS_METERS) return true;
+  return request[label]?.trim().toLowerCase() === candidate[label]?.trim().toLowerCase();
 }
 
 async function getUserRecord(userId) {
@@ -119,8 +140,6 @@ async function createRideRequestRecord(payload) {
 async function findMatchingRide(request) {
   const dbReady = getDbReady();
   const memoryStore = getMemoryStore();
-  const userOrigin = request.origin?.trim().toLowerCase();
-  const userDestination = request.destination?.trim().toLowerCase();
 
   if (dbReady) {
     const windowStart = new Date(request.time.getTime() - 30 * 60 * 1000);
@@ -135,13 +154,10 @@ async function findMatchingRide(request) {
     });
 
     const match = candidates.find((candidate) => {
-      const candidateOrigin = candidate.origin?.trim().toLowerCase();
-      const candidateDestination = candidate.destination?.trim().toLowerCase();
-      //console.log(candidate)
       return (
         candidate.user_id !== request.user_id &&
-        candidateOrigin === userOrigin &&
-        candidateDestination === userDestination
+        locationsMatch(request, candidate, 'origin', 'origin') &&
+        locationsMatch(request, candidate, 'destination', 'destination')
       );
     });
     if (!match) return null;
@@ -196,11 +212,9 @@ async function findMatchingRide(request) {
 
   const candidates = memoryStore.rideRequests.filter((candidate) => {
     const candidateTime = candidate.time instanceof Date ? candidate.time : new Date(candidate.time);
-    const candidateOrigin = candidate.origin?.trim().toLowerCase();
-    const candidateDestination = candidate.destination?.trim().toLowerCase();
     return (
-      candidateOrigin === userOrigin &&
-      candidateDestination === userDestination &&
+      locationsMatch(request, candidate, 'origin', 'origin') &&
+      locationsMatch(request, candidate, 'destination', 'destination') &&
       candidate.status === 'pending' &&
       candidate.user_id !== request.user_id &&
       candidateTime >= windowStart &&
@@ -266,12 +280,19 @@ async function findMatchingRide(request) {
 const rideController = {
   async findRide(req, res) {
     try {
-      const { origin, destination, time, userName, userEmail } = req.body;
+      const {
+        origin, destination, time, userName, userEmail,
+        originLatitude, originLongitude, destinationLatitude, destinationLongitude
+      } = req.body;
       const user = await ensureUser(userName, userEmail);
 
       const request = await createRideRequestRecord({
         origin,
         destination,
+        origin_latitude: Number.isFinite(Number(originLatitude)) ? Number(originLatitude) : null,
+        origin_longitude: Number.isFinite(Number(originLongitude)) ? Number(originLongitude) : null,
+        destination_latitude: Number.isFinite(Number(destinationLatitude)) ? Number(destinationLatitude) : null,
+        destination_longitude: Number.isFinite(Number(destinationLongitude)) ? Number(destinationLongitude) : null,
         time: parseRideTime(time),
         user_id: user.id,
         user_name: user.name,

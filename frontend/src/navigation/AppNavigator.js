@@ -14,7 +14,7 @@ import AuthScreen from '../screens/AuthScreen';
 import { getStoredUser } from '../services/user';
 import { getJson } from '../services/api';
 import { joinUser, onSocket, onSocketConnect, socket } from '../services/socket';
-import { incrementUnread, setUnreadCount } from '../services/chatBadge';
+import { incrementUnread, isActiveChatMatch, setUnreadCount } from '../services/chatBadge';
 import { logError } from '../services/errorHandling';
 
 const Stack = createStackNavigator();
@@ -53,7 +53,8 @@ export default function AppNavigator() {
 
     const cleanMessage = onSocket('chatMessage', (message) => {
       getStoredUser().then((user) => {
-        if (user?.id && Number(message.receiverId) === Number(user.id) && !message.seen) incrementUnread();
+        const isRecipient = user?.id && Number(message.receiverId) === Number(user.id);
+        if (isRecipient && !message.seen && !isActiveChatMatch(message.matchId)) incrementUnread();
       });
     });
 
