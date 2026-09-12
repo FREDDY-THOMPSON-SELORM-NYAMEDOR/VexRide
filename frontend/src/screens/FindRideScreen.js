@@ -7,6 +7,7 @@ import { clearSearchSession, getSearchSession, saveSearchSession } from '../serv
 import { SearchIcon, PinIcon, FlagIcon, ClockIcon, ZapIcon } from '../components/Icons';
 import LocationPickerMap from '../components/LocationPickerMap';
 import { friendlyError, logError } from '../services/errorHandling';
+import { getCurrentLocation } from '../services/currentLocation';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
@@ -26,6 +27,8 @@ export default function FindRideScreen({ navigation, route }) {
   const [destinationLocation, setDestinationLocation] = useState(null);
   const [locationPickerField, setLocationPickerField] = useState(null);
   const [locationLookupLoading, setLocationLookupLoading] = useState(false);
+  const [currentLocationLoading, setCurrentLocationLoading] = useState(false);
+  const [usingCurrentLocation, setUsingCurrentLocation] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -97,11 +100,29 @@ export default function FindRideScreen({ navigation, route }) {
     if (field === 'origin') {
       setOrigin(value);
       setOriginLocation(null);
+      setUsingCurrentLocation(false);
     } else {
       setDestination(value);
       setDestinationLocation(null);
     }
     setActiveLocationField(field);
+  }
+
+  async function handleUseCurrentLocation() {
+    try {
+      setCurrentLocationLoading(true);
+      setError('');
+      const location = await getCurrentLocation();
+      setOrigin(location.label);
+      setOriginLocation(location);
+      setUsingCurrentLocation(true);
+      setActiveLocationField(null);
+    } catch (locationError) {
+      setError(friendlyError(locationError, 'Could not access your current location. You can choose your pickup on the map.'));
+      logError('Use current location', locationError);
+    } finally {
+      setCurrentLocationLoading(false);
+    }
   }
 
   async function handleMapLocationSelect(coordinate) {
@@ -155,6 +176,13 @@ export default function FindRideScreen({ navigation, route }) {
         originLongitude: originLocation?.longitude,
         destinationLatitude: destinationLocation?.latitude,
         destinationLongitude: destinationLocation?.longitude,
+        originData: originLocation ? {
+          lat: originLocation.lat ?? originLocation.latitude,
+          lon: originLocation.lon ?? originLocation.longitude,
+          city: originLocation.city,
+          region: originLocation.region,
+          country: originLocation.country
+        } : null,
         userName: APP_USER.name,
         userEmail: APP_USER.email
       });
@@ -211,7 +239,7 @@ export default function FindRideScreen({ navigation, route }) {
               <SearchIcon size={20} color="#00f2fe" />
             </View>
             <View className="flex-1 min-w-0">
-              <Text className="text-xl font-black text-white">Find Your Ride</Text>
+              <Text className="text-xl font-black text-white">Find Your Ride Partner</Text>
               <Text className="text-[#8eb4c6] text-xs">Search live shared routes nearby</Text>
             </View>
           </View>
@@ -230,6 +258,16 @@ export default function FindRideScreen({ navigation, route }) {
                   onChangeText={(value) => updateLocationText('origin', value)}
                   onFocus={() => setActiveLocationField('origin')}
                 />
+                <TouchableOpacity
+                  className={`mt-2 self-start flex-row items-center gap-1.5 ${currentLocationLoading ? 'opacity-60' : ''}`}
+                  onPress={handleUseCurrentLocation}
+                  disabled={currentLocationLoading}
+                >
+                  <Text className="text-[#00f2fe] text-[10px] font-black">
+                    {currentLocationLoading ? 'Requesting location...' : 'Use my current location'}
+                  </Text>
+                </TouchableOpacity>
+                {usingCurrentLocation ? <Text className="text-[#7ee787] text-[10px] font-bold mt-1">GPS origin selected</Text> : null}
                 {activeLocationField === 'origin' && locationSuggestions.length > 0 ? (
                   <View className="mt-2 border-t border-white/[0.1] pt-1">
                     {locationSuggestions.map((place) => (

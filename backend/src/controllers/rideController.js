@@ -27,6 +27,53 @@ function normalizeRideParticipant(record) {
   };
 }
 
+function serializeRequest(record) {
+  const request = normalizeRideParticipant(record) || {};
+  const originData = request.origin_data || {
+    lat: request.origin_latitude,
+    lon: request.origin_longitude,
+    city: null,
+    region: null,
+    country: null
+  };
+  return {
+    _id: request.id,
+    id: request.id,
+    userId: request.user_id,
+    userName: request.user_name || request.name,
+    origin: originData,
+    originLabel: request.origin,
+    destination: request.destination,
+    destinationLocation: Number.isFinite(Number(request.destination_latitude)) && Number.isFinite(Number(request.destination_longitude))
+      ? { lat: Number(request.destination_latitude), lon: Number(request.destination_longitude) }
+      : null,
+    time: request.time,
+    status: request.status,
+    matchId: request.match_id || null,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt
+  };
+}
+
+async function findRequestById(requestId, userId) {
+  const numericRequestId = Number(requestId);
+  const numericUserId = userId === undefined ? null : Number(userId);
+  if (getDbReady()) {
+    return RideRequest.findOne({
+      where: { id: numericRequestId, ...(numericUserId ? { user_id: numericUserId } : {}) }
+    });
+  }
+  return getMemoryStore().rideRequests.find((entry) =>
+    Number(entry.id) === numericRequestId && (numericUserId === null || Number(entry.user_id) === numericUserId)
+  ) || null;
+}
+
+async function emitRequestUpdated(request) {
+  const payload = serializeRequest(request);
+  emitToUser(request.user_id, 'requestUpdated', payload);
+  return payload;
+}
+
 function broadcast(event, payload) {
   if (io) io.emit(event, payload);
 }
@@ -137,6 +184,16 @@ async function createRideRequestRecord(payload) {
   return request;
 }
 
+async function getRequestsForUser(userId) {
+  const numericUserId = Number(userId);
+  if (getDbReady()) {
+    return RideRequest.findAll({ where: { user_id: numericUserId }, order: [['createdAt', 'DESC']] });
+  }
+  return getMemoryStore().rideRequests
+    .filter((entry) => Number(entry.user_id) === numericUserId)
+    .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
+}
+
 async function findMatchingRide(request) {
   const dbReady = getDbReady();
   const memoryStore = getMemoryStore();
@@ -174,7 +231,8 @@ async function findMatchingRide(request) {
       dropoff_location: request.destination,
       ride_time: request.time
     });
-    await RideRequest.update({ status: 'matched' }, { where: { id: [request.id, match.id] } });
+    await request.update({ status: 'matched', match_id: createdMatch.id });
+    await match.update({ status: 'matched', match_id: createdMatch.id });
     const liveLocationState = await getLiveMatchState(createdMatch);
     const requestPayload = normalizeRideParticipant(request);
     const counterPartyPayload = normalizeRideParticipant(match);
@@ -191,19 +249,29 @@ async function findMatchingRide(request) {
 
     //console.log(request.user_id, match.user_id, request, match, createdMatch.id);
     emitToUser(request.user_id, 'matchFound', {
+      requestId: request.id,
       matchId: createdMatch.id,
+      partnerInfo: counterPartyPayload,
+      origin: serializeRequest(request).origin,
+      destination: request.destination,
       request: requestPayload,
       counterParty: counterPartyPayload,
       liveLocationState
     });
 
     emitToUser(match.user_id, 'matchFound', {
+      requestId: match.id,
       matchId: createdMatch.id,
+      partnerInfo: requestPayload,
+      origin: serializeRequest(match).origin,
+      destination: match.destination,
       request: counterPartyPayload,
       counterParty: requestPayload,
       liveLocationState
     });
     broadcast('rideMatched', { matchId: createdMatch.id, origin: request.origin, destination: request.destination });
+    await emitRequestUpdated(request);
+    await emitRequestUpdated(match);
     return matchPayload;
   }
 
@@ -247,6 +315,8 @@ async function findMatchingRide(request) {
   memoryStore.matches.push(createdMatch);
   request.status = 'matched';
   match.status = 'matched';
+  request.match_id = createdMatch.id;
+  match.match_id = createdMatch.id;
 
   const requestPayload = normalizeRideParticipant(request);
   const counterPartyPayload = normalizeRideParticipant(match);
@@ -260,20 +330,30 @@ async function findMatchingRide(request) {
   };
 
   emitToUser(request.user_id, 'matchFound', {
+    requestId: request.id,
     matchId: createdMatch.id,
+    partnerInfo: counterPartyPayload,
+    origin: serializeRequest(request).origin,
+    destination: request.destination,
     request: requestPayload,
     counterParty: counterPartyPayload,
     liveLocationState: await getLiveMatchState(createdMatch)
   });
 
   emitToUser(match.user_id, 'matchFound', {
+    requestId: match.id,
     matchId: createdMatch.id,
+    partnerInfo: requestPayload,
+    origin: serializeRequest(match).origin,
+    destination: match.destination,
     request: counterPartyPayload,
     counterParty: requestPayload,
     liveLocationState: await getLiveMatchState(createdMatch)
   });
   
   broadcast('rideMatched', { matchId: createdMatch.id, origin: request.origin, destination: request.destination });
+  await emitRequestUpdated(request);
+  await emitRequestUpdated(match);
   return createdMatch;
 }
 
@@ -282,12 +362,20 @@ const rideController = {
     try {
       const {
         origin, destination, time, userName, userEmail,
-        originLatitude, originLongitude, destinationLatitude, destinationLongitude
+        originLatitude, originLongitude, destinationLatitude, destinationLongitude,
+        originData
       } = req.body;
       const user = await ensureUser(userName, userEmail);
 
       const request = await createRideRequestRecord({
         origin,
+        origin_data: originData ? {
+          lat: Number(originData.lat),
+          lon: Number(originData.lon),
+          city: originData.city || null,
+          region: originData.region || null,
+          country: originData.country || null
+        } : null,
         destination,
         origin_latitude: Number.isFinite(Number(originLatitude)) ? Number(originLatitude) : null,
         origin_longitude: Number.isFinite(Number(originLongitude)) ? Number(originLongitude) : null,
@@ -300,8 +388,10 @@ const rideController = {
       });
 
       const requestPayload = normalizeRideParticipant(request);
+      const serializedRequest = serializeRequest(request);
+      emitToUser(user.id, 'requestCreated', serializedRequest);
       const match = await findMatchingRide(request);
-      res.json({ success: true, request: requestPayload, match });
+      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match });
     } catch (error) {
       console.error('Error finding ride:', error);
       res.status(500).json({ success: false, message: error.message });
@@ -321,16 +411,62 @@ const rideController = {
         const request = await RideRequest.findOne({ where: { id: requestId, user_id: userId } });
         if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
         await request.update({ status: 'cancelled' });
+        await emitRequestUpdated(request);
       } else {
         const request = memoryStore.rideRequests.find((entry) => entry.id === Number(requestId) && entry.user_id === Number(userId));
         if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
         request.status = 'cancelled';
         request.updatedAt = new Date();
+        await emitRequestUpdated(request);
       }
 
       res.json({ success: true });
     } catch (error) {
       console.error('Error cancelling ride:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  async listRequests(req, res) {
+    try {
+      const userId = Number(req.query.userId);
+      if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+      const requests = await getRequestsForUser(userId);
+      const visibleRequests = req.query.includeHistory === 'true'
+        ? requests
+        : requests.filter((request) => ['pending', 'matched'].includes(request.status));
+      res.json({ success: true, requests: visibleRequests.map(serializeRequest) });
+    } catch (error) {
+      console.error('Error listing ride requests:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  async getRequest(req, res) {
+    try {
+      const request = await findRequestById(req.params.id);
+      if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
+      res.json({ success: true, request: serializeRequest(request) });
+    } catch (error) {
+      console.error('Error loading ride request:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  async updateRequestStatus(req, res) {
+    try {
+      const { status, userId } = req.body;
+      if (!['cancelled', 'completed'].includes(status)) {
+        return res.status(400).json({ success: false, message: 'Only cancelled or completed status is allowed' });
+      }
+      const request = await findRequestById(req.params.id, userId);
+      if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
+      if (getDbReady()) await request.update({ status });
+      else { request.status = status; request.updatedAt = new Date(); }
+      const payload = await emitRequestUpdated(request);
+      res.json({ success: true, request: payload });
+    } catch (error) {
+      console.error('Error updating ride request:', error);
       res.status(500).json({ success: false, message: error.message });
     }
   },

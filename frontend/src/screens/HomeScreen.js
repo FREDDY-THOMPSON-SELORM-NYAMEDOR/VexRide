@@ -5,7 +5,7 @@ import LogoutConfirm from '../components/LogoutConfirm';
 import { onSocket } from '../services/socket';
 import { getStoredUser, logoutUser } from '../services/user';
 import ScreenLayout from '../components/ScreenLayout';
-import { SearchIcon, PlusIcon, GroupsIcon, LogoutIcon, ZapIcon, CarIcon } from '../components/Icons';
+import { SearchIcon, PlusIcon, GroupsIcon, LogoutIcon, ZapIcon, CarIcon, TrackingIcon } from '../components/Icons';
 
 const heroImage = require('../../assets/images/vex_home_bg_1784946351687.jpg');
 
@@ -97,7 +97,7 @@ export default function HomeScreen({ navigation, route }) {
           >
             <SearchIcon size={20} color="#050c1a" />
             <View className="items-start sm:items-center">
-              <Text className="text-[#050c1a] font-black text-base">Find Ride</Text>
+              <Text className="text-[#050c1a] font-black text-base">Find Partner</Text>
               <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Instant matching</Text>
             </View>
           </TouchableOpacity>
@@ -122,6 +122,15 @@ export default function HomeScreen({ navigation, route }) {
         >
           <GroupsIcon size={18} color="#00f2fe" />
           <Text className="text-[#00f2fe] font-extrabold text-base">Browse Live Groups</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="w-full bg-[#0b172a]/95 border border-white/[0.12] p-4 rounded-2xl items-center justify-center flex-row gap-2.5 active:bg-white/[0.08] shadow-md mb-6 backdrop-blur-xl"
+          onPress={() => navigation.navigate('TrackingHub')}
+          activeOpacity={0.8}
+        >
+          <TrackingIcon size={18} color="#00f2fe" />
+          <Text className="text-white font-extrabold text-base">Open Tracking</Text>
         </TouchableOpacity>
 
         {/* Live Activity Feed */}

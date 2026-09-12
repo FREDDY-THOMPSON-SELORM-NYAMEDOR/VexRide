@@ -10,6 +10,8 @@ import RideDetailsScreen from '../screens/RideDetailsScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
 import BrowseGroupsScreen from '../screens/BrowseGroupsScreen';
 import RideTrackingScreen from '../screens/RideTrackingScreen';
+import MyRequestsScreen from '../screens/MyRequestsScreen';
+import TrackingHubScreen from '../screens/TrackingHubScreen';
 import AuthScreen from '../screens/AuthScreen';
 import { getStoredUser } from '../services/user';
 import { getJson } from '../services/api';
@@ -87,6 +89,8 @@ export default function AppNavigator() {
         <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
         <Stack.Screen name="BrowseGroups" component={BrowseGroupsScreen} />
         <Stack.Screen name="RideTracking" component={RideTrackingScreen} />
+        <Stack.Screen name="MyRequests" component={MyRequestsScreen} />
+        <Stack.Screen name="TrackingHub" component={TrackingHubScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
