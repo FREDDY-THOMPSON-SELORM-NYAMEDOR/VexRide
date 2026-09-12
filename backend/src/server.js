@@ -278,6 +278,9 @@ app.get('/user/:userId', userController.getUserById);
 // Ride routes
 app.post('/findRide', rideController.findRide);
 app.post('/cancelRide', rideController.cancelRide);
+app.get('/api/requests', rideController.listRequests);
+app.get('/api/requests/:id', rideController.getRequest);
+app.patch('/api/requests/:id', rideController.updateRequestStatus);
 app.post('/location/update', rideController.updateLocation);
 app.get('/match/:matchId/live', rideController.getMatchLiveState);
 

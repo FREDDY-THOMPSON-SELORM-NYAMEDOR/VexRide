@@ -1,4 +1,4 @@
-const { Match, User } = require('../models');
+const { Match, User, RideRequest } = require('../models');
 const { getDbReady, getMemoryStore } = require('../utils/helpers');
 const { buildLiveMatchState } = require('../utils/liveLocation');
 
@@ -179,6 +179,46 @@ const matchController = {
       });
 
       if (rideCompleted) {
+        if (dbReady) {
+          await RideRequest.update(
+            { status: 'completed' },
+            { where: { id: [match.ride1_id, match.ride2_id] } }
+          );
+          const completedRequests = await RideRequest.findAll({ where: { id: [match.ride1_id, match.ride2_id] } });
+          completedRequests.forEach((request) => {
+            emitToUser(request.user_id, 'requestUpdated', {
+              _id: request.id,
+              id: request.id,
+              userId: request.user_id,
+              origin: request.origin,
+              destination: request.destination,
+              time: request.time,
+              status: request.status,
+              matchId: request.match_id || match.id,
+              createdAt: request.createdAt,
+              updatedAt: request.updatedAt
+            });
+          });
+        } else {
+          memoryStore.rideRequests
+            .filter((request) => request.id === match.ride1_id || request.id === match.ride2_id)
+            .forEach((request) => {
+              request.status = 'completed';
+              request.updatedAt = new Date();
+              emitToUser(request.user_id, 'requestUpdated', {
+                _id: request.id,
+                id: request.id,
+                userId: request.user_id,
+                origin: request.origin,
+                destination: request.destination,
+                time: request.time,
+                status: request.status,
+                matchId: request.match_id || match.id,
+                createdAt: request.createdAt,
+                updatedAt: request.updatedAt
+              });
+            });
+        }
         emitToUser(match.user1_id, 'rideCompleted', { matchId, status: 'completed', match });
         emitToUser(match.user2_id, 'rideCompleted', { matchId, status: 'completed', match });
       }

@@ -6,7 +6,7 @@ import { useUnreadCount } from '../services/chatBadge';
 const navItems = [
   { name: 'Home', label: 'Home', IconComponent: HomeIcon },
   { name: 'FindRide', label: 'Search', IconComponent: SearchIcon },
-  { name: 'RideTracking', label: 'Tracking', IconComponent: TrackingIcon },
+  { name: 'TrackingHub', label: 'Tracking', IconComponent: TrackingIcon },
   { name: 'BrowseGroups', label: 'Groups', IconComponent: GroupsIcon }
 ];
 
@@ -24,7 +24,9 @@ export default function BottomNav({ navigation, activeRoute }) {
     >
       <View className="w-full max-w-md bg-[#07162b]/95 border border-[#00f2fe]/40 rounded-full px-2 py-2 flex-row justify-around items-center shadow-2xl shadow-[#00f2fe]/30 backdrop-blur-2xl">
         {navItems.map((item) => {
-          const active = activeRoute === item.name;
+          const active = item.name === 'TrackingHub'
+            ? ['TrackingHub', 'MyRequests', 'RideTracking'].includes(activeRoute)
+            : activeRoute === item.name;
           const { IconComponent } = item;
           return (
             <TouchableOpacity
@@ -47,7 +49,7 @@ export default function BottomNav({ navigation, activeRoute }) {
                 >
                   {item.label}
                 </Text>
-                {item.name === 'RideTracking' && unreadCount > 0 ? (
+                {item.name === 'TrackingHub' && unreadCount > 0 ? (
                   <View className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 items-center justify-center">
                     <Text className="text-white text-[10px] font-black">{unreadCount > 99 ? '99+' : unreadCount}</Text>
                   </View>
