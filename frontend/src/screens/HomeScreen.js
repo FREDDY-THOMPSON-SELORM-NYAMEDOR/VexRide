@@ -130,7 +130,7 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <TrackingIcon size={18} color="#00f2fe" />
-          <Text className="text-white font-extrabold text-base">Manage My Requests</Text>
+          <Text className="text-white font-extrabold text-base">Open Tracking</Text>
         </TouchableOpacity>
 
         {/* Live Activity Feed */}
