@@ -6,6 +6,8 @@ import { onSocket } from '../services/socket';
 import ScreenLayout from '../components/ScreenLayout';
 import { CheckIcon, ClockIcon, FlagIcon, PinIcon, SearchIcon } from '../components/Icons';
 import { friendlyError, logError } from '../services/errorHandling';
+import RequestMapView from '../components/RequestMapView';
+import { getCurrentLocation } from '../services/currentLocation';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 const activeStatuses = ['pending', 'matched'];
@@ -22,6 +24,14 @@ function formatTime(value) {
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function originLabel(request) {
+  if (request?.originLabel) return request.originLabel;
+  if (typeof request?.origin === 'string') return request.origin;
+  return [request?.origin?.city, request?.origin?.region, request?.origin?.country]
+    .filter(Boolean)
+    .join(', ') || 'Current area';
+}
+
 export default function MyRequestsScreen({ navigation, route }) {
   const [requests, setRequests] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -31,6 +41,8 @@ export default function MyRequestsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [error, setError] = useState('');
+  const [showMap, setShowMap] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState(null);
 
   const loadRequests = useCallback(async () => {
     const user = await getStoredUser();
@@ -40,6 +52,11 @@ export default function MyRequestsScreen({ navigation, route }) {
     setRequests(result.requests || []);
     setSelectedId((current) => current || result.requests?.[0]?._id || null);
   }, []);
+
+  useEffect(() => {
+    if (!showMap || currentLocation) return;
+    getCurrentLocation().then(setCurrentLocation).catch((locationError) => logError('Load map location', locationError));
+  }, [showMap, currentLocation]);
 
   useEffect(() => {
     let active = true;
@@ -62,11 +79,11 @@ export default function MyRequestsScreen({ navigation, route }) {
         ? current
         : [created, ...current]);
     });
-    const cleanMatched = onSocket('matchFound', ({ requestId, partnerInfo }) => {
+    const cleanMatched = onSocket('matchFound', ({ requestId, matchId, partnerInfo, origin, destination }) => {
       if (!requestId) return;
       setPartners((current) => ({ ...current, [requestId]: partnerInfo }));
       setRequests((current) => current.map((request) => Number(request._id) === Number(requestId)
-        ? { ...request, status: 'matched' }
+        ? { ...request, status: 'matched', matchId, origin: origin || request.origin, destination: destination || request.destination }
         : request));
     });
     return () => { cleanUpdated(); cleanCreated(); cleanMatched(); };
@@ -77,6 +94,12 @@ export default function MyRequestsScreen({ navigation, route }) {
     : activeStatuses.includes(request.status));
   const selected = visibleRequests.find((request) => Number(request._id) === Number(selectedId)) || visibleRequests[0];
   const partner = selected ? partners[selected._id] : null;
+
+  function handleMapSelect(request) {
+    setShowMap(false);
+    setShowHistory(false);
+    setSelectedId(request._id || request.id);
+  }
 
   async function updateStatus(status) {
     if (!selected || !currentUser?.id) return;
@@ -113,6 +136,19 @@ export default function MyRequestsScreen({ navigation, route }) {
           ))}
         </View>
 
+        <View className="flex-row gap-2 mb-4">
+          <TouchableOpacity className={`flex-1 py-3 rounded-2xl items-center border ${!showMap ? 'bg-[#00f2fe] border-[#00f2fe]' : 'bg-[#0b172a]/95 border-white/[0.12]'}`} onPress={() => setShowMap(false)}>
+            <Text className={`font-black text-xs uppercase tracking-widest ${!showMap ? 'text-[#061426]' : 'text-[#8eb4c6]'}`}>List View</Text>
+          </TouchableOpacity>
+          <TouchableOpacity className={`flex-1 py-3 rounded-2xl items-center border ${showMap ? 'bg-[#00f2fe] border-[#00f2fe]' : 'bg-[#0b172a]/95 border-white/[0.12]'}`} onPress={() => setShowMap(true)}>
+            <Text className={`font-black text-xs uppercase tracking-widest ${showMap ? 'text-[#061426]' : 'text-[#8eb4c6]'}`}>Map View</Text>
+          </TouchableOpacity>
+        </View>
+
+        {showMap && !showHistory ? (
+          <RequestMapView requests={requests.filter((request) => activeStatuses.includes(request.status))} currentLocation={currentLocation} selectedId={selectedId} onSelect={handleMapSelect} />
+        ) : null}
+
         {loading ? <ActivityIndicator color="#00f2fe" size="large" /> : null}
         {error ? <Text className="text-[#ff8c73] text-sm mb-3">{error}</Text> : null}
         {!loading && visibleRequests.length === 0 ? (
@@ -122,14 +158,14 @@ export default function MyRequestsScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {visibleRequests.map((request) => {
+        {!showMap ? visibleRequests.map((request) => {
           const selectedRequest = Number(selected?._id) === Number(request._id);
           const color = statusColor(request.status);
           return (
             <TouchableOpacity key={request._id} onPress={() => setSelectedId(request._id)} className={`bg-[#0b172a]/95 rounded-2xl p-4 mb-3 border ${selectedRequest ? 'border-[#00f2fe]' : 'border-white/[0.1]'}`}>
               <View className="flex-row items-center justify-between gap-3">
                 <View className="flex-1">
-                  <Text className="text-white font-black text-sm" numberOfLines={1}>{request.origin} to {request.destination}</Text>
+                  <Text className="text-white font-black text-sm" numberOfLines={1}>{originLabel(request)} to {request.destination}</Text>
                   <Text className="text-[#8eb4c6] text-xs mt-1">{formatTime(request.time)}</Text>
                 </View>
                 <View style={{ backgroundColor: `${color}25`, borderColor: `${color}80` }} className="px-3 py-1.5 rounded-full border">
@@ -138,12 +174,12 @@ export default function MyRequestsScreen({ navigation, route }) {
               </View>
             </TouchableOpacity>
           );
-        })}
+        }) : null}
 
         {selected ? (
           <View className="bg-[#071426]/95 border border-[#00f2fe]/30 rounded-3xl p-5 mt-1">
             <Text className="text-[#00f2fe] text-[10px] font-black uppercase tracking-widest mb-3">Selected request #{selected._id}</Text>
-            <View className="flex-row items-center gap-3 mb-3"><PinIcon size={17} color="#00f2fe" /><Text className="text-white font-extrabold flex-1">{selected.origin}</Text></View>
+            <View className="flex-row items-center gap-3 mb-3"><PinIcon size={17} color="#00f2fe" /><Text className="text-white font-extrabold flex-1">{originLabel(selected)}</Text></View>
             <View className="flex-row items-center gap-3 mb-3"><FlagIcon size={17} color="#ff5e36" /><Text className="text-white font-extrabold flex-1">{selected.destination}</Text></View>
             <View className="flex-row items-center gap-3"><ClockIcon size={17} color="#8eb4c6" /><Text className="text-[#c9e5f4] text-sm flex-1">{formatTime(selected.time)}</Text></View>
             {selected.status === 'matched' ? (

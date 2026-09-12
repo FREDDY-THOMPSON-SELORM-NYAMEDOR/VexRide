@@ -256,10 +256,49 @@ app.get('/places/reverse', async (req, res) => {
     const area = address.neighbourhood || address.suburb || address.quarter || address.village;
     const city = address.city || address.town || address.municipality || address.county;
     const label = [area, city, address.state].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ') || response.data.display_name;
-    res.json({ success: true, location: { label, subtitle: response.data.display_name, latitude, longitude } });
+    res.json({ success: true, location: {
+      label,
+      subtitle: response.data.display_name,
+      latitude,
+      longitude,
+      lat: latitude,
+      lon: longitude,
+      city: city || null,
+      region: address.state || address.region || null,
+      country: address.country || null
+    } });
   } catch (error) {
     console.error('Reverse location search failed:', error.message);
     res.status(502).json({ success: false, message: 'Could not identify the selected location.' });
+  }
+});
+
+app.get('/places/ip', async (req, res) => {
+  try {
+    const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const clientIp = forwardedFor || req.socket.remoteAddress;
+    const isLocalIp = !clientIp || clientIp.includes('127.0.0.1') || clientIp.includes('::1');
+    const lookupUrl = !isLocalIp
+      ? `https://ipapi.co/${clientIp}/json/`
+      : 'https://ipapi.co/json/';
+    const response = await axios.get(lookupUrl, { timeout: 5000 });
+    const location = response.data || {};
+    if (!Number.isFinite(Number(location.latitude)) || !Number.isFinite(Number(location.longitude))) {
+      return res.status(404).json({ success: false, message: 'Could not determine approximate location.' });
+    }
+    res.json({ success: true, location: {
+      lat: Number(location.latitude),
+      lon: Number(location.longitude),
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      city: location.city || null,
+      region: location.region || null,
+      country: location.country_name || null,
+      label: [location.city, location.region, location.country_name].filter(Boolean).join(', ')
+    } });
+  } catch (error) {
+    console.error('GeoIP lookup failed:', error.message);
+    res.status(502).json({ success: false, message: 'Approximate location is unavailable.' });
   }
 });
 

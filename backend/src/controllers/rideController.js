@@ -29,13 +29,24 @@ function normalizeRideParticipant(record) {
 
 function serializeRequest(record) {
   const request = normalizeRideParticipant(record) || {};
+  const originData = request.origin_data || {
+    lat: request.origin_latitude,
+    lon: request.origin_longitude,
+    city: null,
+    region: null,
+    country: null
+  };
   return {
     _id: request.id,
     id: request.id,
     userId: request.user_id,
     userName: request.user_name || request.name,
-    origin: request.origin,
+    origin: originData,
+    originLabel: request.origin,
     destination: request.destination,
+    destinationLocation: Number.isFinite(Number(request.destination_latitude)) && Number.isFinite(Number(request.destination_longitude))
+      ? { lat: Number(request.destination_latitude), lon: Number(request.destination_longitude) }
+      : null,
     time: request.time,
     status: request.status,
     matchId: request.match_id || null,
@@ -241,6 +252,8 @@ async function findMatchingRide(request) {
       requestId: request.id,
       matchId: createdMatch.id,
       partnerInfo: counterPartyPayload,
+      origin: serializeRequest(request).origin,
+      destination: request.destination,
       request: requestPayload,
       counterParty: counterPartyPayload,
       liveLocationState
@@ -250,6 +263,8 @@ async function findMatchingRide(request) {
       requestId: match.id,
       matchId: createdMatch.id,
       partnerInfo: requestPayload,
+      origin: serializeRequest(match).origin,
+      destination: match.destination,
       request: counterPartyPayload,
       counterParty: requestPayload,
       liveLocationState
@@ -318,6 +333,8 @@ async function findMatchingRide(request) {
     requestId: request.id,
     matchId: createdMatch.id,
     partnerInfo: counterPartyPayload,
+    origin: serializeRequest(request).origin,
+    destination: request.destination,
     request: requestPayload,
     counterParty: counterPartyPayload,
     liveLocationState: await getLiveMatchState(createdMatch)
@@ -327,6 +344,8 @@ async function findMatchingRide(request) {
     requestId: match.id,
     matchId: createdMatch.id,
     partnerInfo: requestPayload,
+    origin: serializeRequest(match).origin,
+    destination: match.destination,
     request: counterPartyPayload,
     counterParty: requestPayload,
     liveLocationState: await getLiveMatchState(createdMatch)
@@ -343,12 +362,20 @@ const rideController = {
     try {
       const {
         origin, destination, time, userName, userEmail,
-        originLatitude, originLongitude, destinationLatitude, destinationLongitude
+        originLatitude, originLongitude, destinationLatitude, destinationLongitude,
+        originData
       } = req.body;
       const user = await ensureUser(userName, userEmail);
 
       const request = await createRideRequestRecord({
         origin,
+        origin_data: originData ? {
+          lat: Number(originData.lat),
+          lon: Number(originData.lon),
+          city: originData.city || null,
+          region: originData.region || null,
+          country: originData.country || null
+        } : null,
         destination,
         origin_latitude: Number.isFinite(Number(originLatitude)) ? Number(originLatitude) : null,
         origin_longitude: Number.isFinite(Number(originLongitude)) ? Number(originLongitude) : null,
@@ -361,9 +388,10 @@ const rideController = {
       });
 
       const requestPayload = normalizeRideParticipant(request);
-      emitToUser(user.id, 'requestCreated', serializeRequest(request));
+      const serializedRequest = serializeRequest(request);
+      emitToUser(user.id, 'requestCreated', serializedRequest);
       const match = await findMatchingRide(request);
-      res.json({ success: true, request: { ...requestPayload, ...serializeRequest(request) }, match });
+      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match });
     } catch (error) {
       console.error('Error finding ride:', error);
       res.status(500).json({ success: false, message: error.message });

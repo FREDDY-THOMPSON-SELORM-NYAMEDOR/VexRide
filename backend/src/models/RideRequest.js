@@ -4,6 +4,7 @@ const sequelize = require('../config/database');
 const RideRequest = sequelize.define('RideRequest', {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   origin: { type: DataTypes.STRING, allowNull: false },
+  origin_data: { type: DataTypes.JSONB, allowNull: true },
   destination: { type: DataTypes.STRING, allowNull: false },
   origin_latitude: { type: DataTypes.FLOAT, allowNull: true },
   origin_longitude: { type: DataTypes.FLOAT, allowNull: true },
