@@ -13,6 +13,13 @@ import { friendlyError, logError } from '../services/errorHandling';
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 const SEARCH_TIMEOUT_SECONDS = 120;
 
+function locationLabel(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (value.label) return value.label;
+  return [value.city, value.region, value.country].filter(Boolean).join(', ') || 'Current area';
+}
+
 export default function MatchResultScreen({ navigation, route }) {
   const { origin, destination, time, match, request } = route.params || {};
   const [currentMatch, setCurrentMatch] = useState(match);
@@ -218,7 +225,7 @@ export default function MatchResultScreen({ navigation, route }) {
             <PinIcon size={18} color="#00f2fe" />
             <View className="flex-1 min-w-0">
               <Text className="text-[#8eb4c6] text-[10px] uppercase font-bold">Pick-up Origin</Text>
-              <Text className="text-white text-sm font-extrabold">{origin || activeRequest?.origin || request?.origin || 'Downtown'}</Text>
+              <Text className="text-white text-sm font-extrabold">{locationLabel(origin || activeRequest?.origin || request?.origin) || 'Downtown'}</Text>
             </View>
           </View>
 
