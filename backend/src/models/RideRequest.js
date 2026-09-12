@@ -13,7 +13,14 @@ const RideRequest = sequelize.define('RideRequest', {
   time: { type: DataTypes.DATE, allowNull: false },
   user_id: { type: DataTypes.INTEGER, allowNull: false },
   user_name: { type: DataTypes.STRING, allowNull: false},
-  status: { type: DataTypes.ENUM('pending', 'matched', 'completed', 'cancelled'), defaultValue: 'pending' },
+  status: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'pending',
+    validate: {
+      isIn: [['pending', 'matched', 'completed', 'cancelled']]
+    }
+  },
   match_id: { type: DataTypes.INTEGER, allowNull: true }
 }, {
   tableName: 'ride_requests',
