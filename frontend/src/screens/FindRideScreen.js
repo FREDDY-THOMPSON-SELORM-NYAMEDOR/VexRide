@@ -211,7 +211,7 @@ export default function FindRideScreen({ navigation, route }) {
               <SearchIcon size={20} color="#00f2fe" />
             </View>
             <View className="flex-1 min-w-0">
-              <Text className="text-xl font-black text-white">Find Your Ride</Text>
+              <Text className="text-xl font-black text-white">Find Your Ride Partner</Text>
               <Text className="text-[#8eb4c6] text-xs">Search live shared routes nearby</Text>
             </View>
           </View>

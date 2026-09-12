@@ -97,7 +97,7 @@ export default function HomeScreen({ navigation, route }) {
           >
             <SearchIcon size={20} color="#050c1a" />
             <View className="items-start sm:items-center">
-              <Text className="text-[#050c1a] font-black text-base">Find Ride</Text>
+              <Text className="text-[#050c1a] font-black text-base">Find Partner</Text>
               <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Instant matching</Text>
             </View>
           </TouchableOpacity>
