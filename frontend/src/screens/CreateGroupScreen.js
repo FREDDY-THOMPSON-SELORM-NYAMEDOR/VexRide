@@ -22,6 +22,8 @@ export default function CreateGroupScreen({ navigation, route }) {
   const [locationPickerField, setLocationPickerField] = useState(null);
   const [locationLookupLoading, setLocationLookupLoading] = useState(false);
   const [locationValues, setLocationValues] = useState({ destination: null, origin: null });
+  const [activeLocationField, setActiveLocationField] = useState(null);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [pickerField, setPickerField] = useState(null);
   const [pickerMode, setPickerMode] = useState(null);
   const [draftDate, setDraftDate] = useState(scheduleDate);
@@ -76,6 +78,54 @@ export default function CreateGroupScreen({ navigation, route }) {
     const [rawHour, minutes] = value.split(':');
     const hour = Number(rawHour);
     return `${hour % 12 || 12}:${minutes} ${hour >= 12 ? 'PM' : 'AM'}`;
+  }
+
+  const activeLocationValue = activeLocationField === 'destination' ? location : origin;
+
+  useEffect(() => {
+    if (!activeLocationField || activeLocationValue.trim().length < 2) {
+      setLocationSuggestions([]);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await getJson(`/places/search?q=${encodeURIComponent(activeLocationValue.trim())}`);
+        if (active) setLocationSuggestions(result.locations || []);
+      } catch (error) {
+        if (active) setLocationSuggestions([]);
+        logError('Search group locations', error);
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [activeLocationField, activeLocationValue]);
+
+  function updateLocationText(field, value) {
+    setLocationValues((previous) => ({ ...previous, [field]: null }));
+    if (field === 'destination') setLocation(value);
+    if (field === 'origin') setOrigin(value);
+    setActiveLocationField(field);
+  }
+
+  function selectLocation(place) {
+    setLocationValues((previous) => ({
+      ...previous,
+      [activeLocationField]: {
+        label: place.label,
+        subtitle: place.subtitle,
+        latitude: place.latitude,
+        longitude: place.longitude
+      }
+    }));
+    if (activeLocationField === 'destination') setLocation(place.label);
+    if (activeLocationField === 'origin') setOrigin(place.label);
+    setActiveLocationField(null);
+    setLocationSuggestions([]);
   }
 
   async function handleMapLocationSelect(coordinate) {
@@ -141,14 +191,33 @@ export default function CreateGroupScreen({ navigation, route }) {
         ].map(([label, value, field, FieldIcon]) => (
           <View key={label} className="mb-4">
             <Text className="text-[#c9e5f4] text-xs font-extrabold mb-1.5">{label}</Text>
-            <TouchableOpacity className="bg-white/[0.06] rounded-2xl px-4 py-3.5 border border-white/[0.12] flex-row items-center gap-2.5" onPress={() => setLocationPickerField(field)}>
+            <View className="bg-white/[0.06] rounded-2xl px-4 py-3.5 border border-white/[0.12] flex-row items-start gap-2.5">
               <FieldIcon size={16} color="#8eb4c6" />
-              <View className="flex-1">
-                <Text className="text-white font-bold text-sm" numberOfLines={1}>{value || 'Choose on map'}</Text>
-                <Text className="text-[#00f2fe] text-[10px] font-black mt-1">Choose on map</Text>
+              <View className="flex-1 min-w-0">
+                <TextInput
+                  className="text-white font-bold text-sm p-0"
+                  placeholder="Search for a place"
+                  placeholderTextColor="#688ca0"
+                  value={value}
+                  onChangeText={(text) => updateLocationText(field, text)}
+                  onFocus={() => setActiveLocationField(field)}
+                />
+                {activeLocationField === field && locationSuggestions.length > 0 ? (
+                  <View className="mt-2 border-t border-white/[0.1] pt-1">
+                    {locationSuggestions.map((place) => (
+                      <TouchableOpacity key={place.id} className="py-2" onPress={() => selectLocation(place)}>
+                        <Text className="text-white text-xs font-bold" numberOfLines={1}>{place.label}</Text>
+                        {place.subtitle ? <Text className="text-[#8eb4c6] text-[10px] mt-0.5" numberOfLines={1}>{place.subtitle}</Text> : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                <TouchableOpacity className="mt-1 self-start" onPress={() => setLocationPickerField(field)}>
+                  <Text className="text-[#00f2fe] text-[10px] font-black">Choose on map</Text>
+                </TouchableOpacity>
               </View>
               <Text className="text-[#00f2fe] text-lg font-black">›</Text>
-            </TouchableOpacity>
+            </View>
           </View>
         ))}
 
