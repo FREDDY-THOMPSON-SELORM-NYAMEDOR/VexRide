@@ -69,7 +69,7 @@ export default function AuthScreen({ navigation, route }) {
               {mode === 'signup' ? 'Create Account' : 'Welcome Back'}
             </Text>
             <Text className="text-[#8eb4c6] text-xs text-center mt-1">
-              {mode === 'signup' ? 'Join VexRide for instant matching & group sharing' : 'Sign in to access your rider profile & active trips'}
+              {mode === 'signup' ? 'Create an account to find and plan rides with others' : 'Sign in to manage your rides'}
             </Text>
           </View>
 

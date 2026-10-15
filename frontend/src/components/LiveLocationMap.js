@@ -8,13 +8,19 @@ if (Platform.OS !== 'web') {
   ({ default: MapView, Marker, Polyline } = require('react-native-maps'));
 }
 
-function toRegion(location) {
-  if (!location) return null;
+function toRegion(locations) {
+  if (!locations.length) return null;
+  const latitudes = locations.map((location) => Number(location.latitude));
+  const longitudes = locations.map((location) => Number(location.longitude));
+  const minLatitude = Math.min(...latitudes);
+  const maxLatitude = Math.max(...latitudes);
+  const minLongitude = Math.min(...longitudes);
+  const maxLongitude = Math.max(...longitudes);
   return {
-    latitude: Number(location.latitude),
-    longitude: Number(location.longitude),
-    latitudeDelta: 0.02,
-    longitudeDelta: 0.02
+    latitude: (minLatitude + maxLatitude) / 2,
+    longitude: (minLongitude + maxLongitude) / 2,
+    latitudeDelta: Math.max(maxLatitude - minLatitude, 0.02) * 1.4,
+    longitudeDelta: Math.max(maxLongitude - minLongitude, 0.02) * 1.4
   };
 }
 function isValidLocation(loc) {
@@ -22,14 +28,17 @@ function isValidLocation(loc) {
 }
 
 export default function LiveLocationMap({ liveLocationState, height = 240, title = 'Live locations' }) {
-  const user1Location = liveLocationState?.user1Location;
-  const user2Location = liveLocationState?.user2Location;
+  const participants = liveLocationState?.participants?.length
+    ? liveLocationState.participants
+    : [liveLocationState?.user1Location, liveLocationState?.user2Location].filter(Boolean);
   const carLocation = liveLocationState?.carLocation;
-  const focusLocation = carLocation || user1Location || user2Location;
-  const region = toRegion(focusLocation);
+  const validParticipants = participants.filter(isValidLocation);
+  const validLocations = [...validParticipants, carLocation].filter(isValidLocation);
+  const hasLiveLocations = validParticipants.some((participant) => participant.locationType !== 'pickup');
+  const region = toRegion(validLocations);
   const isWeb = Platform.OS === 'web';
 
-  if (isWeb || !region || (!isValidLocation(user1Location) && !isValidLocation(user2Location) && !isValidLocation(carLocation))) {
+  if (isWeb || !region || !validLocations.length) {
     return (
       <View style={{ minHeight: height }} className="bg-[#0b172a] rounded-3xl p-4 border border-[#00f2fe]/30 shadow-xl mb-4 justify-center items-center">
         <Text className="text-white font-extrabold text-sm mb-2">{title}</Text>
@@ -47,15 +56,22 @@ export default function LiveLocationMap({ liveLocationState, height = 240, title
         <Text className="text-white font-extrabold text-sm tracking-wide">{title}</Text>
         <View className="flex-row items-center gap-1 bg-[#00f2fe]/10 px-2.5 py-0.5 rounded-full border border-[#00f2fe]/30">
           <View className="w-1.5 h-1.5 rounded-full bg-[#00f2fe]" />
-          <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">GPS Live</Text>
+          <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">{hasLiveLocations ? 'GPS Live' : 'Pickup points'}</Text>
         </View>
       </View>
 
       <MapView style={{ height, width: '100%', borderRadius: 16 }} initialRegion={region} region={region}>
-        {isValidLocation(user1Location) ? <Marker coordinate={user1Location} title="Rider 1" description={user1Location.name || 'First rider'} pinColor="#00f2fe" /> : null}
-        {isValidLocation(user2Location) ? <Marker coordinate={user2Location} title="Rider 2" description={user2Location.name || 'Second rider'} pinColor="#ff5e36" /> : null}
+        {validParticipants.map((participant, index) => (
+          <Marker
+            key={participant.userId || participant.id || index}
+            coordinate={participant}
+            title={participant.name || `Rider ${index + 1}`}
+            description={participant.locationType === 'pickup' ? 'Pickup location' : 'Live location'}
+            pinColor={index % 2 === 0 ? '#00f2fe' : '#ff5e36'}
+          />
+        ))}
         {isValidLocation(carLocation) ? <Marker coordinate={carLocation} title="Car" description="Shared car location" pinColor="#ffffff" /> : null}
-        {isValidLocation(user1Location) && isValidLocation(user2Location) ? <Polyline coordinates={[user1Location, user2Location]} strokeColor="rgba(0, 242, 254, 0.6)" strokeWidth={3} /> : null}
+        {validParticipants.length > 1 ? <Polyline coordinates={liveLocationState?.pickupSequence?.length ? liveLocationState.pickupSequence : validParticipants} strokeColor="rgba(0, 242, 254, 0.6)" strokeWidth={3} /> : null}
       </MapView>
       <Text className="text-[#00f2fe] text-xs font-bold mt-2.5 leading-4">{liveLocationState?.pickupSummary || 'Live tracking active'}</Text>
     </View>

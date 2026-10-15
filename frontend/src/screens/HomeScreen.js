@@ -26,6 +26,9 @@ export default function HomeScreen({ navigation, route }) {
   useEffect(() => {
     const cleanups = [
       onSocket('rideMatched', ({ origin, destination }) => setAlerts(prev => [`Live Match: ${origin} → ${destination}`, ...prev].slice(0, 5))),
+      onSocket('connectionRequested', ({ requester }) => setAlerts(prev => [`${requester?.name || 'A rider'} wants to join your ride`, ...prev].slice(0, 5))),
+      onSocket('connectionAccepted', ({ recipient }) => setAlerts(prev => [`${recipient?.name || 'The ride owner'} accepted a request to join`, ...prev].slice(0, 5))),
+      onSocket('connectionDeclined', ({ recipient }) => setAlerts(prev => [`${recipient?.name || 'The ride owner'} declined a request to join`, ...prev].slice(0, 5))),
       onSocket('groupCreated', ({ group }) => setAlerts(prev => [`New Crew: ${group.origin} → ${group.location}`, ...prev].slice(0, 5))),
       onSocket('groupRideBooked', ({ ride }) => setAlerts(prev => [`Ride Booked: ${ride.provider} arrives in ${ride.eta}`, ...prev].slice(0, 5)))
     ];
@@ -83,12 +86,12 @@ export default function HomeScreen({ navigation, route }) {
               <Text className="text-[#00f2fe] font-black text-[10px] uppercase tracking-widest">Real-time Mobility</Text>
             </View>
           </View>
-          <Text className="text-2xl font-black text-white mb-1 tracking-tight">Ride Modern & Split Smart</Text>
-          <Text className="text-[#ccebf5] text-xs leading-5">Connect with nearby riders, share group trips, and verify payments instantly.</Text>
+          <Text className="text-2xl font-black text-white mb-1 tracking-tight">Find people to share your ride</Text>
+          <Text className="text-[#ccebf5] text-xs leading-5">Post your route, review nearby riders, and decide who joins you.</Text>
         </Animated.View>
 
         {/* Quick Action Buttons */}
-        <Text className="text-white text-base font-black mb-3 tracking-wide">Quick Actions</Text>
+        <Text className="text-white text-base font-black mb-3 tracking-wide">What would you like to do?</Text>
         <View className="mb-5 flex-col sm:flex-row gap-3">
           <TouchableOpacity
             className="flex-1 bg-[#00f2fe] p-4 rounded-2xl items-center justify-center shadow-lg border border-[#00f2fe]/50 active:scale-95 transition-all flex-row sm:flex-col gap-2 sm:gap-1"
@@ -97,8 +100,8 @@ export default function HomeScreen({ navigation, route }) {
           >
             <SearchIcon size={20} color="#050c1a" />
             <View className="items-start sm:items-center">
-              <Text className="text-[#050c1a] font-black text-base">Find Partner</Text>
-              <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Instant matching</Text>
+              <Text className="text-[#050c1a] font-black text-base">Create a ride request</Text>
+              <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Post your route and find riders</Text>
             </View>
           </TouchableOpacity>
 
@@ -109,8 +112,8 @@ export default function HomeScreen({ navigation, route }) {
           >
             <PlusIcon size={20} color="#ffffff" />
             <View className="items-start sm:items-center">
-              <Text className="text-white font-black text-base">Create Group</Text>
-              <Text className="text-white/80 font-semibold text-[10px]">Host a ride crew</Text>
+              <Text className="text-white font-black text-base">Start a group ride</Text>
+              <Text className="text-white/80 font-semibold text-[10px]">Plan a ride with others</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -121,7 +124,16 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <GroupsIcon size={18} color="#00f2fe" />
-          <Text className="text-[#00f2fe] font-extrabold text-base">Browse Live Groups</Text>
+          <Text className="text-[#00f2fe] font-extrabold text-base">Find a group ride</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="w-full bg-[#0b172a]/95 border border-[#ff5e36]/40 p-4 rounded-2xl items-center justify-center flex-row gap-2.5 active:bg-[#ff5e36]/10 transition-all shadow-md mb-6 backdrop-blur-xl"
+          onPress={() => navigation.navigate('ConnectionRequests')}
+          activeOpacity={0.8}
+        >
+          <SearchIcon size={18} color="#ff5e36" />
+          <Text className="text-[#ff8c73] font-extrabold text-base">Requests to join your ride</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -130,7 +142,7 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <TrackingIcon size={18} color="#00f2fe" />
-          <Text className="text-white font-extrabold text-base">Open Tracking</Text>
+          <Text className="text-white font-extrabold text-base">My rides and requests</Text>
         </TouchableOpacity>
 
         {/* Live Activity Feed */}
@@ -149,7 +161,7 @@ export default function HomeScreen({ navigation, route }) {
                 <CarIcon size={20} color="#8eb4c6" />
               </View>
               <Text className="text-[#8eb4c6] text-xs font-semibold text-center leading-5">
-                Listening for fresh ride matches and crew updates...
+                Ride updates and group activity will appear here.
               </Text>
             </View>
           ) : (

@@ -7,7 +7,8 @@ let memoryStore = {
   chatMessages: [],
   payments: [],
   groups: [],
-  groupMembers: []
+  groupMembers: [],
+  connectionRequests: []
 };
 
 let dbReady = false;

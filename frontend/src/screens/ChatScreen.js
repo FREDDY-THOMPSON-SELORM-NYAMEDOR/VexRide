@@ -3,19 +3,22 @@ import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView
 import { getJson, patchJson } from '../services/api';
 import ScreenLayout from '../components/ScreenLayout';
 import { getStoredUser } from '../services/user';
-import { joinChatRoom, markMessageSeen, onSocket, onSocketConnect, sendChatMessage, sendTypingStart, sendTypingStop, socket } from '../services/socket';
+import { joinChatRoom, joinUser, markMessageSeen, onSocket, onSocketConnect, sendChatMessage, sendTypingStart, sendTypingStop, socket } from '../services/socket';
 import { isActiveChatMatch, resetUnread, setActiveChatMatchId } from '../services/chatBadge';
 import { logError } from '../services/errorHandling';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
 export default function ChatScreen({ navigation, route }) {
-  const { matchId, request, counterParty } = route.params || {};
+  const { matchId, rideRequestId, request, counterParty } = route.params || {};
+  const chatRoomId = rideRequestId || matchId;
+  const isGroupChat = Boolean(rideRequestId);
   const [currentUser, setCurrentUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [matchDetails, setMatchDetails] = useState({ matchId, request, counterParty });
+  const [participants, setParticipants] = useState([]);
   const typingTimer = useRef(null);
   const markVisibleMessagesSeenRef = useRef(null);
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
@@ -60,34 +63,41 @@ export default function ChatScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    if (!matchId) return undefined;
+    if (!chatRoomId || !currentUser?.id) return undefined;
 
-    setActiveChatMatchId(matchId);
+    setActiveChatMatchId(chatRoomId);
 
-    const joinRoom = () => joinChatRoom(matchId);
-    const cleanConnection = onSocketConnect(joinRoom);
-    if (socket.connected) joinRoom();
- 
     let active = true;
-    (async () => {
-      try {
-        const result = await getJson(`/match/${matchId}/chat`);
-        if (!active) return;
-        setMessages((existingMessages) => mergeMessages(existingMessages, result.messages || []));
-        resetUnread();
-        (result.messages || []).filter((message) => currentUser?.id && String(getSenderId(message)) !== String(currentUser.id) && !message.seen)
-          .forEach((message) => {
-            if (!message.id) return;
-            markMessageSeen({ matchId, messageId: message.id, userId: currentUser.id });
-            patchJson(`/messages/${message.id}/seen`, { userId: currentUser.id }).catch(() => {});
-          });
-      } catch (error) {
-        logError('Load chat messages', error);
-      }
-    })();
+    const joinAndLoadMessages = () => {
+      joinChatRoom(matchId, rideRequestId, async ({ success } = {}) => {
+        if (!active || !success) return;
+        try {
+          const result = await getJson(isGroupChat
+            ? `/api/requests/${rideRequestId}/chat?userId=${currentUser?.id}`
+            : `/match/${matchId}/chat`);
+          if (!active) return;
+          setMessages((existingMessages) => mergeMessages(existingMessages, result.messages || []));
+          setParticipants(result.participants || []);
+          resetUnread();
+          (result.messages || []).filter((message) => currentUser?.id && String(getSenderId(message)) !== String(currentUser.id) && !message.seen)
+            .forEach((message) => {
+              if (!message.id) return;
+              markMessageSeen({ matchId, messageId: message.id, userId: currentUser.id });
+              patchJson(`/messages/${message.id}/seen`, { userId: currentUser.id }).catch(() => {});
+            });
+        } catch (error) {
+          logError('Load chat messages', error);
+        }
+      });
+    };
+
+    const cleanConnection = onSocketConnect(joinAndLoadMessages);
+    joinUser(currentUser.id);
+    if (socket.connected) joinAndLoadMessages();
 
     const cleanMessage = onSocket('chatMessage', (incomingMessage) => {
-      if (String(incomingMessage.matchId) !== String(matchId)) return;
+      const incomingRoomId = isGroupChat ? incomingMessage.rideRequestId : incomingMessage.matchId;
+      if (String(incomingRoomId) !== String(chatRoomId)) return;
       const isOwnMessage = String(getSenderId(incomingMessage)) === String(currentUser?.id);
       const message = { ...incomingMessage, seen: Boolean(incomingMessage.seen) };
       setMessages((previousMessages) => mergeMessages(previousMessages, [message]));
@@ -99,18 +109,21 @@ export default function ChatScreen({ navigation, route }) {
     });
 
     const cleanSeen = onSocket('onMessageSeen', ({ matchId: incomingMatchId, messageId }) => {
+      if (isGroupChat) return;
       if (String(incomingMatchId) !== String(matchId)) return;
       setMessages((previousMessages) => previousMessages.map((message) => (
         String(message.id || message.uuid) === String(messageId) ? { ...message, seen: true } : message
       )));
     });
 
-    const cleanTypingStart = onSocket('onTypingStart', ({ matchId: incomingMatchId, userId }) => {
-      if (String(incomingMatchId) === String(matchId) && String(userId) !== String(currentUser?.id)) setPartnerTyping(true);
+    const cleanTypingStart = onSocket('onTypingStart', ({ matchId: incomingMatchId, rideRequestId: incomingRequestId, userId }) => {
+      const incomingRoomId = isGroupChat ? incomingRequestId : incomingMatchId;
+      if (String(incomingRoomId) === String(chatRoomId) && String(userId) !== String(currentUser?.id)) setPartnerTyping(true);
     });
 
-    const cleanTypingStop = onSocket('onTypingStop', ({ matchId: incomingMatchId, userId }) => {
-      if (String(incomingMatchId) === String(matchId) && String(userId) !== String(currentUser?.id)) setPartnerTyping(false);
+    const cleanTypingStop = onSocket('onTypingStop', ({ matchId: incomingMatchId, rideRequestId: incomingRequestId, userId }) => {
+      const incomingRoomId = isGroupChat ? incomingRequestId : incomingMatchId;
+      if (String(incomingRoomId) === String(chatRoomId) && String(userId) !== String(currentUser?.id)) setPartnerTyping(false);
     });
 
     const cleanMatch = onSocket('matchFound', ({ matchId: incomingMatchId, request: incomingRequest, counterParty: incomingCounterParty }) => {
@@ -120,7 +133,7 @@ export default function ChatScreen({ navigation, route }) {
 
     return () => {
       active = false;
-      if (isActiveChatMatch(matchId)) setActiveChatMatchId(null);
+      if (isActiveChatMatch(chatRoomId)) setActiveChatMatchId(null);
       cleanConnection();
       cleanMessage();
       cleanSeen();
@@ -128,9 +141,9 @@ export default function ChatScreen({ navigation, route }) {
       cleanTypingStop();
       cleanMatch();
       if (typingTimer.current) clearTimeout(typingTimer.current);
-      sendTypingStop(matchId);
+      sendTypingStop(matchId, rideRequestId);
     };
-  }, [matchId, currentUser?.id]);
+  }, [matchId, rideRequestId, chatRoomId, isGroupChat, currentUser?.id]);
 
   useEffect(() => {
     resetUnread();
@@ -138,10 +151,10 @@ export default function ChatScreen({ navigation, route }) {
 
   function handleDraftChange(value) {
     setDraft(value);
-    if (!matchId) return;
-    sendTypingStart(matchId);
+    if (!chatRoomId) return;
+    sendTypingStart(matchId, rideRequestId);
     if (typingTimer.current) clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => sendTypingStop(matchId), 1200);
+    typingTimer.current = setTimeout(() => sendTypingStop(matchId, rideRequestId), 1200);
   }
 
   function markVisibleMessagesSeen(viewableItems) {
@@ -157,6 +170,7 @@ export default function ChatScreen({ navigation, route }) {
     )));
     unseenPartnerMessages.forEach((message) => {
       if (message.id) {
+        if (isGroupChat) return;
         markMessageSeen({ matchId, messageId: message.id, userId: currentUser?.id });
         patchJson(`/messages/${message.id}/seen`, { userId: currentUser?.id }).catch(() => {});
       }
@@ -168,13 +182,15 @@ export default function ChatScreen({ navigation, route }) {
 
   function handleSend() {
     const trimmedMessage = draft.trim();
-    if (!trimmedMessage || !matchId) return;
+    if (!trimmedMessage || !chatRoomId) return;
 
-    sendChatMessage({ matchId, message: trimmedMessage, userId: currentUser?.id });
+    sendChatMessage({ matchId, rideRequestId, message: trimmedMessage, userId: currentUser?.id });
     setDraft('');
   }
 
-  const partnerName = matchDetails?.counterParty?.name || matchDetails?.counterParty?.user_name || counterParty?.name || counterParty?.user_name || request?.name || request?.user_name || counterParty || 'Matched rider';
+  const partnerName = isGroupChat
+    ? participants.map((participant) => participant.name).filter(Boolean).join(', ') || 'Accepted riders'
+    : matchDetails?.counterParty?.name || matchDetails?.counterParty?.user_name || counterParty?.name || counterParty?.user_name || request?.name || request?.user_name || counterParty || 'Matched rider';
 
   return (
     <ScreenLayout navigation={navigation} route={route} bgImage={heroImage} hideBottomNav>
@@ -183,17 +199,17 @@ export default function ChatScreen({ navigation, route }) {
           <View className="flex-row items-center justify-between mb-4">
             <View>
               <Text className="text-xl font-black text-white">Chat</Text>
-              <Text className="text-[#8eb4c6] text-xs">Conversation with {partnerName}</Text>
+              <Text className="text-[#8eb4c6] text-xs">{isGroupChat ? `${participants.length || 'Group'} riders` : `Conversation with ${partnerName}`}</Text>
             </View>
             <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 px-3 py-1 rounded-full">
-              <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">Match #{matchId || 'N/A'}</Text>
+              <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">{isGroupChat ? `Group #${rideRequestId}` : `Match #${matchId || 'N/A'}`}</Text>
             </View>
           </View>
 
           <View className="max-h-[520px] flex-1 rounded-3xl border border-[#00f2fe]/20 bg-[#0b172a]/95 overflow-auto shadow-2xl">
             <View className="px-4 py-3 border-b border-white/[0.08] bg-white/[0.03]">
               <Text className="text-white font-extrabold text-sm">{partnerName}</Text>
-              <Text className="text-[#8eb4c6] text-xs mt-0.5">Private room chat for this ride</Text>
+              <Text className="text-[#8eb4c6] text-xs mt-0.5">{isGroupChat ? 'Shared room for accepted riders' : 'Private room chat for this ride'}</Text>
             </View>
 
             <FlatList
@@ -212,7 +228,7 @@ export default function ChatScreen({ navigation, route }) {
                   <View className={`mb-3 flex-row ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                     <View className={`max-w-[82%] rounded-3xl px-4 py-3 border ${isOwnMessage ? 'bg-[#ff5e36] border-[#ff5e36]/60' : 'bg-white/[0.06] border-white/[0.10]'}`}>
                       <Text className={`text-xs font-bold mb-1 ${isOwnMessage ? 'text-white/80' : 'text-[#8eb4c6]'}`}>
-                        {isOwnMessage ? 'You' : partnerName}
+                        {isOwnMessage ? 'You' : item.senderName || partnerName}
                       </Text>
                       <Text className="text-white text-sm leading-5">{item.message}</Text>
                       <View className="flex-row items-center gap-2 mt-2">

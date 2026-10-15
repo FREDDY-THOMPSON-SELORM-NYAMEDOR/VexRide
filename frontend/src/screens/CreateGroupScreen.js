@@ -179,15 +179,15 @@ export default function CreateGroupScreen({ navigation, route }) {
             <GroupsIcon size={20} color="#ff5e36" />
           </View>
           <View className="flex-1 min-w-0">
-            <Text className="text-xl font-black text-white">Create Live Group</Text>
-            <Text className="text-[#8eb4c6] text-xs">Set your route, budget & invite riders</Text>
+            <Text className="text-xl font-black text-white">Plan a group ride</Text>
+            <Text className="text-[#8eb4c6] text-xs">Add your route and invite other riders.</Text>
           </View>
         </View>
 
         {/* Route selectors */}
         {[
-          ['Destination Location', location, 'destination', PinIcon],
-          ['Pickup Origin', origin, 'origin', FlagIcon],
+          ['Where are you going?', location, 'destination', PinIcon],
+          ['Where will you start?', origin, 'origin', FlagIcon],
         ].map(([label, value, field, FieldIcon]) => (
           <View key={label} className="mb-4">
             <Text className="text-[#c9e5f4] text-xs font-extrabold mb-1.5">{label}</Text>
@@ -213,7 +213,7 @@ export default function CreateGroupScreen({ navigation, route }) {
                   </View>
                 ) : null}
                 <TouchableOpacity className="mt-1 self-start" onPress={() => setLocationPickerField(field)}>
-                  <Text className="text-[#00f2fe] text-[10px] font-black">Choose on map</Text>
+                  <Text className="text-[#00f2fe] text-[10px] font-black">Pick on map</Text>
                 </TouchableOpacity>
               </View>
               <Text className="text-[#00f2fe] text-lg font-black">›</Text>

@@ -9,6 +9,7 @@ import { getStoredUser } from '../services/user';
 import { clearSearchSession, saveSearchSession } from '../services/searchSession';
 import ChatUnreadBadge from '../components/ChatUnreadBadge';
 import { friendlyError, logError } from '../services/errorHandling';
+import { startLiveLocationTracking } from '../services/liveLocation';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 const SEARCH_TIMEOUT_SECONDS = 120;
@@ -21,9 +22,11 @@ function locationLabel(value) {
 }
 
 export default function MatchResultScreen({ navigation, route }) {
-  const { origin, destination, time, match, request } = route.params || {};
-  const [currentMatch, setCurrentMatch] = useState(match);
-  const [status, setStatus] = useState(match ? 'Match ready' : 'Searching for a rider nearby...');
+  const { origin, destination, time, match, request, groupRequestId } = route.params || {};
+  const isGroupMatch = Boolean(groupRequestId);
+  const initialMatch = match || (groupRequestId ? { id: groupRequestId, groupRequestId } : null);
+  const [currentMatch, setCurrentMatch] = useState(initialMatch);
+  const [status, setStatus] = useState(isGroupMatch ? 'Group match found' : match ? 'Match ready' : 'Searching for a rider nearby...');
   const [activeRequest, setActiveRequest] = useState(request);
   const [counterParty, setCounterParty] = useState(match?.counterParty || null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -31,7 +34,7 @@ export default function MatchResultScreen({ navigation, route }) {
   const [confirmationNote, setConfirmationNote] = useState('');
   const [searchTimeout, setSearchTimeout] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState(SEARCH_TIMEOUT_SECONDS);
-  const [searching, setSearching] = useState(!match);
+  const [searching, setSearching] = useState(!match && !isGroupMatch);
   const timeoutRef = useRef(null);
   const countdownRef = useRef(null);
 
@@ -71,7 +74,12 @@ export default function MatchResultScreen({ navigation, route }) {
       clearSearchTimers();
       clearSearchSession();
     });
-    if (!match) startSearchTimers();
+    if (isGroupMatch) {
+      clearSearchTimers();
+      setSearching(false);
+      setStatus('Group match found');
+      clearSearchSession();
+    } else if (!match) startSearchTimers();
     return () => {
       cleanup();
       clearSearchTimers();
@@ -79,13 +87,39 @@ export default function MatchResultScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
+    if (!isGroupMatch || !currentUser?.id) return undefined;
+    let active = true;
+    let stopTracking;
+    const cleanLocation = onSocket('groupLocationUpdate', ({ rideRequestId: incomingRequestId, liveLocationState }) => {
+      if (String(incomingRequestId) !== String(groupRequestId)) return;
+      setCurrentMatch((previous) => ({ ...previous, id: groupRequestId, liveLocationState }));
+    });
+    getJson(`/api/requests/${groupRequestId}/live?userId=${currentUser.id}`)
+      .then((result) => {
+        if (active && result.liveLocationState) {
+          setCurrentMatch((previous) => ({ ...previous, id: groupRequestId, liveLocationState: result.liveLocationState }));
+        }
+      })
+      .catch((error) => logError('Load group locations', error));
+    startLiveLocationTracking(currentUser.id).then((stop) => {
+      if (active) stopTracking = stop;
+      else stop?.();
+    }).catch((error) => logError('Start group location tracking', error));
+    return () => {
+      active = false;
+      cleanLocation();
+      stopTracking?.();
+    };
+  }, [isGroupMatch, groupRequestId, currentUser?.id]);
+
+  useEffect(() => {
     async function loadLiveState() {
-      if (!currentMatch?.id || currentMatch?.liveLocationState) return;
+      if (isGroupMatch || !currentMatch?.id || currentMatch?.liveLocationState) return;
       try { const result = await getJson(`/match/${currentMatch.id}/live`); if (result.liveLocationState) setCurrentMatch(prev => ({ ...prev, liveLocationState: result.liveLocationState })); }
       catch (e) { logError('Load match location', e); }
     }
     loadLiveState();
-  }, [currentMatch?.id]);
+  }, [currentMatch?.id, isGroupMatch]);
 
   const liveLocationState = currentMatch?.liveLocationState;
 
@@ -207,16 +241,16 @@ export default function MatchResultScreen({ navigation, route }) {
             </View>
             <Text className="text-xl font-black text-white">Ride Match</Text>
           </View>
-          <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 px-3 py-1 rounded-full">
+            <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 px-3 py-1 rounded-full">
             <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">
-              {currentMatch ? `Match #${currentMatch.id}` : 'Searching'}
+              {isGroupMatch ? `Group #${groupRequestId}` : currentMatch ? `Match #${currentMatch.id}` : 'Searching'}
             </Text>
           </View>
         </View>
 
         {/* Live Map Card */}
         <View className="mb-4 rounded-3xl overflow-hidden border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]">
-          <LiveLocationMap liveLocationState={liveLocationState} title="Your live match map" height={220} />
+          <LiveLocationMap liveLocationState={liveLocationState} title={isGroupMatch ? 'Group rider locations' : 'Your live match map'} height={220} />
         </View>
 
         {/* Route Summary Cards */}
@@ -258,7 +292,7 @@ export default function MatchResultScreen({ navigation, route }) {
           ) : null}
           <Text className="text-[#00f2fe] text-xs font-black tracking-wide text-center">{status}</Text>
           <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">
-            Match stays pending until both riders confirm. Chat first, then confirm when ready.
+            {isGroupMatch ? 'Ride locations and pickup order update as riders share GPS.' : 'Match stays pending until both riders confirm. Chat first, then confirm when ready.'}
           </Text>
           {liveLocationState?.pickupSummary ? (
             <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">{liveLocationState.pickupSummary}</Text>
@@ -270,7 +304,7 @@ export default function MatchResultScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        <TouchableOpacity
+        {!isGroupMatch ? <TouchableOpacity
           className={`py-4 rounded-2xl items-center shadow-xl mb-3 flex-row justify-center gap-2 ${
             !currentMatch?.id || confirming ? 'bg-[#00f2fe]/40 border border-[#00f2fe]/30' : 'bg-[#00f2fe] border border-[#00f2fe]/60 active:scale-98'
           }`}
@@ -281,11 +315,13 @@ export default function MatchResultScreen({ navigation, route }) {
           <Text className="text-white font-black text-base tracking-wide">
             {confirming ? 'Confirming...' : currentMatch?.id ? 'Confirm Ride' : 'Waiting for Match...'}
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity> : null}
 
         <TouchableOpacity
           className={`border border-[#00f2fe]/50 bg-[#00f2fe]/10 py-3.5 rounded-2xl items-center flex-row justify-center gap-2 shadow-md ${currentMatch?.id ? 'active:bg-[#00f2fe]/20' : 'opacity-50'}`}
-          onPress={() => navigation.navigate('Chat', { matchId: currentMatch?.id, request: activeRequest, counterParty })}
+          onPress={() => navigation.navigate('Chat', isGroupMatch
+            ? { rideRequestId: groupRequestId, request: activeRequest || request }
+            : { matchId: currentMatch?.id, request: activeRequest, counterParty })}
           disabled={!currentMatch?.id}
         >
           <ChatIcon size={16} color="#00f2fe" />
@@ -293,12 +329,12 @@ export default function MatchResultScreen({ navigation, route }) {
           <ChatUnreadBadge />
         </TouchableOpacity>
 
-        <TouchableOpacity
+        {!isGroupMatch ? <TouchableOpacity
           className="mt-3 border border-[#ff5e36]/40 bg-[#ff5e36]/10 py-3 rounded-2xl items-center"
           onPress={handleCancelSearch}
         >
           <Text className="text-[#ff9b83] font-extrabold text-sm">Cancel Search</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> : null}
 
         {confirmationNote ? (
           <View className="mt-3 bg-[#050e1d] border border-white/[0.08] rounded-2xl px-4 py-3">
