@@ -121,8 +121,8 @@ export default function DiscoverRidersScreen({ navigation, route }) {
             </View>
             <View className="flex-row items-center justify-between mt-4 pt-3 border-t border-white/[0.08]">
               <Text className="text-[#c9e5f4] text-xs">{rider.groupSize || 1} rider{rider.groupSize === 1 ? '' : 's'}{rider.verified ? ' · Verified' : ''}</Text>
-              <TouchableOpacity className={`px-5 py-2.5 rounded-xl ${rider.connectionStatus === 'accepted' ? 'bg-[#7ee787]/20' : rider.connectionStatus === 'sent' || rider.connectionStatus === 'declined' ? 'bg-white/[0.08]' : 'bg-[#ff5e36]'}`} onPress={() => connect(rider)} disabled={Boolean(connectingId) || ['sent', 'accepted', 'declined'].includes(rider.connectionStatus)}>
-                <Text className="text-white font-black text-xs">{connectingId === rider.id ? 'Sending...' : rider.connectionStatus === 'sent' ? 'Request sent' : rider.connectionStatus === 'accepted' ? 'Accepted' : rider.connectionStatus === 'declined' ? 'Not accepted' : 'Ask to join'}</Text>
+              <TouchableOpacity className={`px-5 py-2.5 rounded-xl ${rider.connectionStatus === 'accepted' ? 'bg-[#7ee787]/20' : rider.connectionStatus === 'sent' ? 'bg-white/[0.08]' : 'bg-[#ff5e36]'}`} onPress={() => connect(rider)} disabled={Boolean(connectingId) || ['sent', 'accepted'].includes(rider.connectionStatus)}>
+                <Text className="text-white font-black text-xs">{connectingId === rider.id ? 'Sending...' : rider.connectionStatus === 'sent' ? 'Request sent' : rider.connectionStatus === 'accepted' ? 'Accepted' : rider.connectionStatus === 'declined' ? 'Try again' : 'Ask to join'}</Text>
               </TouchableOpacity>
             </View>
           </View>

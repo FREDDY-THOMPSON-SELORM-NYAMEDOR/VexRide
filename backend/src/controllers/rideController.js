@@ -645,7 +645,7 @@ const rideController = {
 
       const targetRequest = await findRequestById(targetRequestId);
       if (!targetRequest || Number(targetRequest.user_id) === requesterId) return res.status(404).json({ success: false, message: 'Marketplace request not found' });
-      if (!['pending', 'connection_requested', 'partially_grouped'].includes(targetRequest.status)) {
+      if (!['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched'].includes(targetRequest.status)) {
         return res.status(409).json({ success: false, message: 'This request is no longer accepting connections' });
       }
 
@@ -746,7 +746,7 @@ const rideController = {
       if (status === 'declined' && Number(connection.recipient_id) !== userId) return res.status(403).json({ success: false, message: 'Only the ride owner can decline a connection request' });
       if (status === 'cancelled' && Number(connection.requester_id) !== userId) return res.status(403).json({ success: false, message: 'Only the joining rider can leave this group' });
       const rideRequest = await findRequestById(connection.ride_request_id);
-      if (status === 'accepted' && (!rideRequest || !['pending', 'connection_requested', 'partially_grouped'].includes(rideRequest.status))) {
+      if (status === 'accepted' && (!rideRequest || !['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched'].includes(rideRequest.status))) {
         return res.status(409).json({ success: false, message: 'This ride group is no longer accepting riders' });
       }
       if (status === 'accepted') {
@@ -765,13 +765,40 @@ const rideController = {
         return res.status(409).json({ success: false, message: 'This connection request is no longer active' });
       }
       const wasAccepted = connection.status === 'accepted';
-      const changes = { status, ...(status === 'accepted' ? { requester_confirmed: false } : {}) };
+      const wasConfirmedGroup = status === 'accepted' && rideRequest?.status === 'matched';
+      const changes = {
+        status,
+        ...(status === 'accepted' ? { requester_confirmed: false } : {}),
+        ...(wasConfirmedGroup && rideRequest.match_id ? { match_id: rideRequest.match_id } : {})
+      };
       if (dbReady) await connection.update(changes);
       else { Object.assign(connection, changes, { updatedAt: new Date() }); }
       if (status === 'accepted') {
         if (rideRequest) {
-          if (dbReady) await rideRequest.update({ status: 'partially_grouped' });
-          else { rideRequest.status = 'partially_grouped'; rideRequest.updatedAt = new Date(); }
+          if (wasConfirmedGroup) {
+            if (dbReady) {
+              await rideRequest.update({ status: 'grouped', group_owner_confirmed: false });
+              await ConnectionRequest.update(
+                { requester_confirmed: false },
+                { where: { ride_request_id: rideRequest.id, status: 'accepted' } }
+              );
+              if (rideRequest.match_id) await Match.update({ status: 'pending' }, { where: { id: rideRequest.match_id } });
+            } else {
+              rideRequest.status = 'grouped';
+              rideRequest.group_owner_confirmed = false;
+              rideRequest.updatedAt = new Date();
+              memoryStore.connectionRequests
+                .filter((entry) => Number(entry.ride_request_id) === Number(rideRequest.id) && entry.status === 'accepted')
+                .forEach((entry) => { entry.requester_confirmed = false; });
+              const groupMatch = memoryStore.matches.find((entry) => Number(entry.id) === Number(rideRequest.match_id));
+              if (groupMatch) groupMatch.status = 'pending';
+            }
+          } else if (dbReady) {
+            await rideRequest.update({ status: 'partially_grouped' });
+          } else {
+            rideRequest.status = 'partially_grouped';
+            rideRequest.updatedAt = new Date();
+          }
           await markUserSearchesJoined(connection.requester_id);
           await emitRequestUpdated(rideRequest);
         }
@@ -865,7 +892,7 @@ const rideController = {
       }
       const request = await findRequestById(req.params.id, userId);
       if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
-      if (request.status === 'matched') return res.status(409).json({ success: false, message: 'This ride group is already matched' });
+      if (request.status === 'matched' && status !== 'completed') return res.status(409).json({ success: false, message: 'This ride group is already matched' });
       if (status === 'grouped' && !['pending', 'connection_requested', 'partially_grouped'].includes(request.status)) {
         return res.status(409).json({ success: false, message: 'This ride group cannot be closed in its current state' });
       }

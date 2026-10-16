@@ -326,11 +326,24 @@ app.patch('/messages/:messageId/seen', async (req, res) => {
         { seen: true },
         { where: { id: messageId, receiver_id: userId } }
       );
-      if (!updatedCount) return res.status(404).json({ success: false, message: 'Message not found' });
+      if (!updatedCount) {
+        const groupMessage = await ChatMessage.findOne({ where: { id: messageId } });
+        if (!groupMessage?.ride_request_id || !await canAccessGroupChat(groupMessage.ride_request_id, userId)) {
+          return res.status(404).json({ success: false, message: 'Message not found' });
+        }
+        await groupMessage.update({ seen: true });
+      }
     } else {
       const message = getMemoryStore().chatMessages.find((entry) => Number(entry.id) === messageId && Number(entry.receiver_id) === userId);
-      if (!message) return res.status(404).json({ success: false, message: 'Message not found' });
-      message.seen = true;
+      if (message) {
+        message.seen = true;
+      } else {
+        const groupMessage = getMemoryStore().chatMessages.find((entry) => Number(entry.id) === messageId);
+        if (!groupMessage?.ride_request_id || !await canAccessGroupChat(groupMessage.ride_request_id, userId)) {
+          return res.status(404).json({ success: false, message: 'Message not found' });
+        }
+        groupMessage.seen = true;
+      }
     }
 
     res.json({ success: true, messageId, seen: true });
