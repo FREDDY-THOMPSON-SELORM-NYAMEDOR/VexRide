@@ -106,7 +106,7 @@ export default function MyRequestsScreen({ navigation, route }) {
     return () => { cleanUpdated(); cleanCreated(); cleanMatched(); cleanGroupMatched(); };
   }, []);
 
-  const visibleRequests = requests.filter((request) => {
+  const visibleRequests = requests.filter((request) => request.status !== 'joined').filter((request) => {
     if (statusFilter === 'all') return true;
     if (statusFilter === 'pending') return ['pending', 'connection_requested', 'partially_grouped'].includes(request.status);
     if (statusFilter === 'withdrawn') return ['withdrawn', 'cancelled'].includes(request.status);
@@ -222,10 +222,10 @@ export default function MyRequestsScreen({ navigation, route }) {
                 >
                   <Text className="text-[#061426] font-black">Open group chat</Text>
                 </TouchableOpacity>
-                {selected.status === 'matched' ? (
+                {['grouped', 'matched'].includes(selected.status) ? (
                   <TouchableOpacity
                     className="bg-white/[0.08] border border-white/[0.15] rounded-2xl py-3.5 items-center"
-                    onPress={() => navigation.navigate('MatchResult', { groupRequestId: selected._id, request: selected })}
+                    onPress={() => navigation.navigate('MatchResult', { groupRequestId: selected._id, matchId: selected.matchId, request: selected })}
                   >
                     <Text className="text-white font-black">Coordinate group</Text>
                   </TouchableOpacity>
@@ -233,11 +233,8 @@ export default function MyRequestsScreen({ navigation, route }) {
               </View>
             ) : null}
             {statusFilter !== 'completed' && selected.status === 'matched' ? (
-              <View className="flex-row gap-3 mt-5">
-                <TouchableOpacity className="flex-1 bg-[#00f2fe] rounded-2xl py-3.5 items-center" onPress={() => navigation.navigate('MatchResult', { request: selected, match: { id: selected.matchId } })}>
-                  <Text className="text-[#061426] font-black">Open Match</Text>
-                </TouchableOpacity>
-                <TouchableOpacity className="flex-1 bg-white/[0.08] border border-white/[0.15] rounded-2xl py-3.5 items-center" onPress={() => updateStatus('completed')} disabled={Boolean(updatingId)}>
+              <View className="mt-5">
+                <TouchableOpacity className="bg-white/[0.08] border border-white/[0.15] rounded-2xl py-3.5 items-center" onPress={() => updateStatus('completed')} disabled={Boolean(updatingId)}>
                   <CheckIcon size={15} color="#7ee787" />
                   <Text className="text-[#7ee787] font-black text-xs mt-1">Mark Complete</Text>
                 </TouchableOpacity>
@@ -254,13 +251,13 @@ export default function MyRequestsScreen({ navigation, route }) {
                 <Text className="text-white font-black text-sm">{connection.rideRequest?.destination || 'Ride request'}</Text>
                 <Text className="text-[#8eb4c6] text-xs mt-1">{formatTime(connection.rideRequest?.time)}</Text>
                 <View className="flex-row gap-3 mt-3">
-                  <TouchableOpacity className="flex-1 bg-[#00f2fe] rounded-xl py-2.5 items-center" onPress={() => navigation.navigate('Chat', { rideRequestId: connection.ride_request_id, request: connection.rideRequest, counterParty: connection.recipient })}>
+                  <TouchableOpacity className="flex-1 bg-[#00f2fe] rounded-xl py-2.5 items-center" onPress={() => navigation.navigate('Chat', { rideRequestId: connection.ride_request_id, matchId: connection.match_id, request: connection.rideRequest, counterParty: connection.recipient })}>
                     <Text className="text-[#061426] font-black text-xs">Open chat</Text>
                   </TouchableOpacity>
-                  {connection.rideRequest?.status === 'matched' ? (
+                  {['grouped', 'matched'].includes(connection.rideRequest?.status) ? (
                     <TouchableOpacity
                       className="flex-1 bg-white/[0.08] border border-white/[0.15] rounded-xl py-2.5 items-center"
-                      onPress={() => navigation.navigate('MatchResult', { groupRequestId: connection.ride_request_id, request: connection.rideRequest })}
+                      onPress={() => navigation.navigate('MatchResult', { groupRequestId: connection.ride_request_id, matchId: connection.match_id, request: connection.rideRequest })}
                     >
                       <Text className="text-white font-black text-xs">Coordinate</Text>
                     </TouchableOpacity>

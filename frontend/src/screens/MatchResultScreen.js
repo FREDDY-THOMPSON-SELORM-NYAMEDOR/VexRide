@@ -22,15 +22,19 @@ function locationLabel(value) {
 }
 
 export default function MatchResultScreen({ navigation, route }) {
-  const { origin, destination, time, match, request, groupRequestId } = route.params || {};
+  const { origin, destination, time, match, matchId, request, groupRequestId } = route.params || {};
   const isGroupMatch = Boolean(groupRequestId);
-  const initialMatch = match || (groupRequestId ? { id: groupRequestId, groupRequestId } : null);
+  const initialMatch = match || (isGroupMatch && (matchId || request?.matchId) ? { id: matchId || request.matchId, groupRequestId } : isGroupMatch ? { groupRequestId } : null);
   const [currentMatch, setCurrentMatch] = useState(initialMatch);
-  const [status, setStatus] = useState(isGroupMatch ? 'Group match found' : match ? 'Match ready' : 'Searching for a rider nearby...');
+  const [status, setStatus] = useState(isGroupMatch
+    ? (request?.status === 'matched' ? 'Group confirmed' : 'Awaiting rider confirmations')
+    : match ? 'Match ready' : 'Searching for a rider nearby...');
   const [activeRequest, setActiveRequest] = useState(request);
   const [counterParty, setCounterParty] = useState(match?.counterParty || null);
   const [currentUser, setCurrentUser] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [groupConfirming, setGroupConfirming] = useState(false);
+  const [groupConfirmed, setGroupConfirmed] = useState(false);
   const [confirmationNote, setConfirmationNote] = useState('');
   const [searchTimeout, setSearchTimeout] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState(SEARCH_TIMEOUT_SECONDS);
@@ -74,6 +78,14 @@ export default function MatchResultScreen({ navigation, route }) {
       clearSearchTimers();
       clearSearchSession();
     });
+    const cleanRequestUpdated = onSocket('requestUpdated', (updatedRequest) => {
+      if (!isGroupMatch || String(updatedRequest?._id || updatedRequest?.id) !== String(groupRequestId)) return;
+      setActiveRequest((previous) => ({ ...previous, ...updatedRequest }));
+      if (updatedRequest.status === 'matched') {
+        setGroupConfirmed(true);
+        setStatus('Group confirmed');
+      }
+    });
     if (isGroupMatch) {
       clearSearchTimers();
       setSearching(false);
@@ -82,22 +94,23 @@ export default function MatchResultScreen({ navigation, route }) {
     } else if (!match) startSearchTimers();
     return () => {
       cleanup();
+      cleanRequestUpdated();
       clearSearchTimers();
     };
   }, []);
 
   useEffect(() => {
-    if (!isGroupMatch || !currentUser?.id) return undefined;
+    if (!isGroupMatch || !currentUser?.id || activeRequest?.status !== 'matched') return undefined;
     let active = true;
     let stopTracking;
     const cleanLocation = onSocket('groupLocationUpdate', ({ rideRequestId: incomingRequestId, liveLocationState }) => {
       if (String(incomingRequestId) !== String(groupRequestId)) return;
-      setCurrentMatch((previous) => ({ ...previous, id: groupRequestId, liveLocationState }));
+      setCurrentMatch((previous) => ({ ...previous, liveLocationState }));
     });
     getJson(`/api/requests/${groupRequestId}/live?userId=${currentUser.id}`)
       .then((result) => {
         if (active && result.liveLocationState) {
-          setCurrentMatch((previous) => ({ ...previous, id: groupRequestId, liveLocationState: result.liveLocationState }));
+          setCurrentMatch((previous) => ({ ...previous, liveLocationState: result.liveLocationState }));
         }
       })
       .catch((error) => logError('Load group locations', error));
@@ -110,7 +123,7 @@ export default function MatchResultScreen({ navigation, route }) {
       cleanLocation();
       stopTracking?.();
     };
-  }, [isGroupMatch, groupRequestId, currentUser?.id]);
+  }, [isGroupMatch, groupRequestId, currentUser?.id, activeRequest?.status]);
 
   useEffect(() => {
     async function loadLiveState() {
@@ -198,6 +211,28 @@ export default function MatchResultScreen({ navigation, route }) {
     }
   }
 
+  async function handleConfirmGroup() {
+    if (!groupRequestId || !currentUser?.id || groupConfirmed) return;
+    try {
+      setGroupConfirming(true);
+      const result = await postJson(`/api/requests/${groupRequestId}/confirm`, { userId: currentUser.id });
+      setActiveRequest(result.request || activeRequest);
+      if (result.confirmed) {
+        setGroupConfirmed(true);
+        setStatus('Group confirmed');
+        setConfirmationNote('All riders confirmed this group. Live tracking is now available.');
+      } else {
+        setStatus('Waiting for the other riders to confirm');
+        setConfirmationNote('Your confirmation is recorded. Waiting for every rider to confirm.');
+      }
+    } catch (error) {
+      logError('Confirm group match', error);
+      Alert.alert('Unable to confirm group', friendlyError(error, 'This group could not be confirmed. Please try again.'));
+    } finally {
+      setGroupConfirming(false);
+    }
+  }
+
   return (
     <ScreenLayout navigation={navigation} route={route} bgImage={heroImage}>
       <Modal
@@ -239,7 +274,7 @@ export default function MatchResultScreen({ navigation, route }) {
             <View className="w-9 h-9 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/40 items-center justify-center">
               <ZapIcon size={18} color="#00f2fe" />
             </View>
-            <Text className="text-xl font-black text-white">Ride Match</Text>
+            <Text className="text-xl font-black text-white">{isGroupMatch ? 'Group Ride' : 'Ride Match'}</Text>
           </View>
             <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 px-3 py-1 rounded-full">
             <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">
@@ -248,10 +283,17 @@ export default function MatchResultScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Live Map Card */}
-        <View className="mb-4 rounded-3xl overflow-hidden border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]">
-          <LiveLocationMap liveLocationState={liveLocationState} title={isGroupMatch ? 'Group rider locations' : 'Your live match map'} height={220} />
-        </View>
+        {(!isGroupMatch || activeRequest?.status === 'matched') ? (
+          <View className="mb-4 rounded-3xl overflow-hidden border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]">
+            <LiveLocationMap liveLocationState={liveLocationState} title={isGroupMatch ? 'Confirmed group locations' : 'Your live match map'} height={220} />
+          </View>
+        ) : (
+          <View className="mb-4 rounded-3xl border border-[#00f2fe]/30 bg-[#0b172a]/95 p-5">
+            <Text className="text-[#00f2fe] text-xs font-black uppercase tracking-widest">Group confirmation</Text>
+            <Text className="text-white text-base font-black mt-2">Waiting for every accepted rider</Text>
+            <Text className="text-[#8eb4c6] text-xs leading-5 mt-2">The group becomes a confirmed match only after the originator and all accepted riders confirm.</Text>
+          </View>
+        )}
 
         {/* Route Summary Cards */}
         <View className="bg-[#0b172a]/95 rounded-3xl p-5 border border-[#00f2fe]/20 shadow-xl mb-4">
@@ -292,7 +334,9 @@ export default function MatchResultScreen({ navigation, route }) {
           ) : null}
           <Text className="text-[#00f2fe] text-xs font-black tracking-wide text-center">{status}</Text>
           <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">
-            {isGroupMatch ? 'Ride locations and pickup order update as riders share GPS.' : 'Match stays pending until both riders confirm. Chat first, then confirm when ready.'}
+            {isGroupMatch
+              ? (activeRequest?.status === 'matched' ? 'All riders confirmed. Ride locations and pickup order update as riders share GPS.' : 'The ride owner has closed the search. Every rider must confirm before tracking starts.')
+              : 'Match stays pending until both riders confirm. Chat first, then confirm when ready.'}
           </Text>
           {liveLocationState?.pickupSummary ? (
             <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">{liveLocationState.pickupSummary}</Text>
@@ -304,7 +348,18 @@ export default function MatchResultScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        {!isGroupMatch ? <TouchableOpacity
+        {isGroupMatch ? (
+          <TouchableOpacity
+            className={`py-4 rounded-2xl items-center shadow-xl mb-3 flex-row justify-center gap-2 ${groupConfirmed || groupConfirming ? 'bg-[#7ee787]/40 border border-[#7ee787]/40' : 'bg-[#00f2fe] border border-[#00f2fe]/60'}`}
+            onPress={handleConfirmGroup}
+            disabled={groupConfirmed || groupConfirming || activeRequest?.status === 'matched'}
+          >
+            <CheckIcon size={18} color="#050c1a" />
+            <Text className="text-[#050c1a] font-black text-base tracking-wide">
+              {groupConfirmed || activeRequest?.status === 'matched' ? 'Group Confirmed' : groupConfirming ? 'Confirming...' : 'Confirm Group'}
+            </Text>
+          </TouchableOpacity>
+        ) : <TouchableOpacity
           className={`py-4 rounded-2xl items-center shadow-xl mb-3 flex-row justify-center gap-2 ${
             !currentMatch?.id || confirming ? 'bg-[#00f2fe]/40 border border-[#00f2fe]/30' : 'bg-[#00f2fe] border border-[#00f2fe]/60 active:scale-98'
           }`}
@@ -315,19 +370,19 @@ export default function MatchResultScreen({ navigation, route }) {
           <Text className="text-white font-black text-base tracking-wide">
             {confirming ? 'Confirming...' : currentMatch?.id ? 'Confirm Ride' : 'Waiting for Match...'}
           </Text>
-        </TouchableOpacity> : null}
+        </TouchableOpacity>}
 
-        <TouchableOpacity
-          className={`border border-[#00f2fe]/50 bg-[#00f2fe]/10 py-3.5 rounded-2xl items-center flex-row justify-center gap-2 shadow-md ${currentMatch?.id ? 'active:bg-[#00f2fe]/20' : 'opacity-50'}`}
-          onPress={() => navigation.navigate('Chat', isGroupMatch
-            ? { rideRequestId: groupRequestId, request: activeRequest || request }
-            : { matchId: currentMatch?.id, request: activeRequest, counterParty })}
-          disabled={!currentMatch?.id}
-        >
-          <ChatIcon size={16} color="#00f2fe" />
-          <Text className="text-[#00f2fe] font-extrabold text-sm">Open Chat</Text>
-          <ChatUnreadBadge />
-        </TouchableOpacity>
+        {!isGroupMatch ? (
+          <TouchableOpacity
+            className={`border border-[#00f2fe]/50 bg-[#00f2fe]/10 py-3.5 rounded-2xl items-center flex-row justify-center gap-2 shadow-md ${currentMatch?.id ? 'active:bg-[#00f2fe]/20' : 'opacity-50'}`}
+            onPress={() => navigation.navigate('Chat', { matchId: currentMatch?.id, request: activeRequest, counterParty })}
+            disabled={!currentMatch?.id}
+          >
+            <ChatIcon size={16} color="#00f2fe" />
+            <Text className="text-[#00f2fe] font-extrabold text-sm">Open Chat</Text>
+            <ChatUnreadBadge />
+          </TouchableOpacity>
+        ) : null}
 
         {!isGroupMatch ? <TouchableOpacity
           className="mt-3 border border-[#ff5e36]/40 bg-[#ff5e36]/10 py-3 rounded-2xl items-center"

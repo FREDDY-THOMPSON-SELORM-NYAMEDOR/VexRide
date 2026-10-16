@@ -13,6 +13,7 @@ RideRequest.belongsTo(User, { foreignKey: 'user_id' });
 
 RideRequest.hasMany(ConnectionRequest, { foreignKey: 'ride_request_id' });
 ConnectionRequest.belongsTo(RideRequest, { foreignKey: 'ride_request_id' });
+ConnectionRequest.belongsTo(Match, { foreignKey: 'match_id', as: 'match' });
 User.hasMany(ConnectionRequest, { foreignKey: 'requester_id', as: 'sentConnections' });
 User.hasMany(ConnectionRequest, { foreignKey: 'recipient_id', as: 'receivedConnections' });
 ConnectionRequest.belongsTo(User, { foreignKey: 'requester_id', as: 'requester' });

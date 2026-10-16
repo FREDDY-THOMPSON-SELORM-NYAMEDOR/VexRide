@@ -267,9 +267,20 @@ app.get('/api/requests/:id/chat', async (req, res) => {
     if (!rideRequestId || !userId) return res.status(400).json({ success: false, message: 'rideRequestId and userId are required' });
     if (!await canAccessGroupChat(rideRequestId, userId)) return res.status(403).json({ success: false, message: 'You are not an active rider in this group' });
 
+    const relatedMatchIds = getDbReady()
+      ? (await Match.findAll({ where: { [require('sequelize').Op.or]: [{ ride1_id: rideRequestId }, { ride2_id: rideRequestId }] }, attributes: ['id'] })).map((match) => match.id)
+      : getMemoryStore().matches.filter((match) => Number(match.ride1_id) === rideRequestId || Number(match.ride2_id) === rideRequestId).map((match) => match.id);
     const messages = getDbReady()
-      ? await ChatMessage.findAll({ where: { ride_request_id: rideRequestId }, order: [['createdAt', 'ASC']] })
-      : getMemoryStore().chatMessages.filter((entry) => Number(entry.ride_request_id) === rideRequestId).sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
+      ? await ChatMessage.findAll({
+          where: {
+            [require('sequelize').Op.or]: [
+              { ride_request_id: rideRequestId },
+              ...(relatedMatchIds.length ? [{ match_id: { [require('sequelize').Op.in]: relatedMatchIds } }] : [])
+            ]
+          },
+          order: [['createdAt', 'ASC']]
+        })
+      : getMemoryStore().chatMessages.filter((entry) => Number(entry.ride_request_id) === rideRequestId || relatedMatchIds.includes(Number(entry.match_id))).sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
     const groupParticipants = await getGroupChatParticipants(rideRequestId);
     const messagePayloads = await Promise.all(messages.map(async (entry) => {
       const sender = getDbReady()
@@ -277,7 +288,7 @@ app.get('/api/requests/:id/chat', async (req, res) => {
         : getMemoryStore().users.find((user) => Number(user.id) === Number(entry.user_id));
       return {
         id: entry.id,
-        matchId: null,
+        matchId: entry.match_id || null,
         rideRequestId,
         roomId: `request:${rideRequestId}`,
         userId: entry.user_id,
@@ -489,9 +500,8 @@ app.post('/reset-app-data', async (_req, res) => {
     const memoryStore = getMemoryStore();
 
     if (dbReady) {
-      await sequelize.query('TRUNCATE TABLE chat_messages, payments, connection_requests, matches, ride_requests, group_members, groups, users RESTART IDENTITY CASCADE;');
+      await sequelize.query('TRUNCATE TABLE chat_messages, payments, connection_requests, matches, ride_requests, group_members, groups RESTART IDENTITY CASCADE;');
     } else {
-      memoryStore.users = [];
       memoryStore.rideRequests = [];
       memoryStore.matches = [];
       memoryStore.chatMessages = [];

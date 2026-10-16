@@ -77,10 +77,10 @@ export default function AppNavigator() {
         setConnectionNotice({ type: 'declined', ...notification });
       }
     });
-    const cleanGroupMatch = onSocket('groupMatchFound', async ({ rideRequestId, request }) => {
+    const cleanGroupMatch = onSocket('groupMatchFound', async ({ rideRequestId, matchId, request }) => {
       await clearSearchSession();
       if (active && navigationRef.isReady()) {
-        navigationRef.navigate('MatchResult', { groupRequestId: rideRequestId, request });
+        navigationRef.navigate('MatchResult', { groupRequestId: rideRequestId, matchId, request });
       }
     });
 
@@ -163,6 +163,7 @@ export default function AppNavigator() {
                     setConnectionNotice(null);
                     if (navigationRef.isReady()) navigationRef.navigate('Chat', {
                       rideRequestId: accepted.requestId,
+                      matchId: accepted.matchId,
                       request: accepted.rideRequest
                     });
                   }}

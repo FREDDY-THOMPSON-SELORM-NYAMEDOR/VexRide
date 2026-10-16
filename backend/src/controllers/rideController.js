@@ -86,8 +86,8 @@ async function emitGroupMatchFound(request) {
     ? await ConnectionRequest.findAll({ where: { ride_request_id: request.id, status: 'accepted' } })
     : memoryStore.connectionRequests.filter((entry) => Number(entry.ride_request_id) === Number(request.id) && entry.status === 'accepted');
   const payload = { requestId: Number(request.id), rideRequestId: Number(request.id), request: serializeRequest(request) };
-  emitToUser(request.user_id, 'groupMatchFound', payload);
-  connections.forEach((connection) => emitToUser(connection.requester_id, 'groupMatchFound', payload));
+  emitToUser(request.user_id, 'groupMatchFound', { ...payload, matchId: request.match_id || null });
+  connections.forEach((connection) => emitToUser(connection.requester_id, 'groupMatchFound', { ...payload, matchId: connection.match_id || request.match_id || null }));
 }
 
 async function getGroupLocationState(request) {
@@ -174,6 +174,16 @@ async function cancelOpenSearches(userId, exceptRequestId) {
   }
 }
 
+async function markUserSearchesJoined(userId) {
+  const requests = await getRequestsForUser(userId);
+  const activeRequests = requests.filter((request) => ['pending', 'connection_requested'].includes(request.status));
+  for (const request of activeRequests) {
+    if (getDbReady()) await request.update({ status: 'joined' });
+    else { request.status = 'joined'; request.updatedAt = new Date(); }
+    await emitRequestUpdated(request);
+  }
+}
+
 function broadcast(event, payload) {
   if (io) io.emit(event, payload);
 }
@@ -210,9 +220,19 @@ async function getMarketplaceRequests(userId, requestId) {
   const candidates = dbReady
     ? await RideRequest.findAll({ where: { user_id: { [Op.ne]: Number(userId) }, status: { [Op.in]: ['pending', 'connection_requested', 'partially_grouped'] } }, order: [['time', 'ASC']] })
     : memoryStore.rideRequests.filter((entry) => Number(entry.user_id) !== Number(userId) && ['pending', 'connection_requested', 'partially_grouped'].includes(entry.status));
+  const activeOutgoingRequesterIds = dbReady
+    ? new Set((await ConnectionRequest.findAll({
+        where: { status: { [Op.in]: ['sent', 'accepted'] } },
+        attributes: ['requester_id'],
+        group: ['requester_id']
+      })).map((connection) => Number(connection.requester_id)))
+    : new Set(memoryStore.connectionRequests
+      .filter((connection) => ['sent', 'accepted'].includes(connection.status))
+      .map((connection) => Number(connection.requester_id)));
 
   const results = [];
   for (const candidate of candidates) {
+    if (activeOutgoingRequesterIds.has(Number(candidate.user_id))) continue;
     const existingConnection = dbReady
       ? await ConnectionRequest.findOne({ where: { ride_request_id: candidate.id, requester_id: Number(userId) } })
       : memoryStore.connectionRequests.find((entry) => Number(entry.ride_request_id) === Number(candidate.id) && Number(entry.requester_id) === Number(userId));
@@ -245,6 +265,49 @@ async function createConnectionRecord({ rideRequestId, requesterId, recipientId,
   const connection = { id: memoryStore.connectionRequests.length + 1, ride_request_id: rideRequestId, requester_id: requesterId, recipient_id: recipientId, status: 'sent', message: message || null, createdAt: new Date(), updatedAt: new Date() };
   memoryStore.connectionRequests.push(connection);
   return connection;
+}
+
+async function createGroupMatch(request, connections) {
+  if (!request) return null;
+  const dbReady = getDbReady();
+  const memoryStore = getMemoryStore();
+  let match = request.match_id
+    ? (dbReady
+      ? await Match.findByPk(request.match_id)
+      : memoryStore.matches.find((entry) => Number(entry.id) === Number(request.match_id)))
+    : null;
+
+  if (!match || match.match_type !== 'group') {
+    const matchPayload = {
+      ride1_id: request.id,
+      ride2_id: request.id,
+      match_type: 'group',
+      group_request_id: request.id,
+      status: 'pending',
+      user1_id: Number(request.user_id),
+      user1_name: request.user_name,
+      pickup_location: request.origin,
+      dropoff_location: request.destination,
+      ride_time: request.time
+    };
+    match = dbReady
+      ? await Match.create(matchPayload)
+      : (() => {
+          const created = { id: memoryStore.matches.length + 1, ...matchPayload, createdAt: new Date(), updatedAt: new Date() };
+          memoryStore.matches.push(created);
+          return created;
+        })();
+  }
+
+  if (dbReady) {
+    await request.update({ match_id: match.id });
+    for (const connection of connections) await connection.update({ match_id: match.id });
+  } else {
+    request.match_id = match.id;
+    request.updatedAt = new Date();
+    connections.forEach((connection) => { connection.match_id = match.id; connection.updatedAt = new Date(); });
+  }
+  return match;
 }
 
 function locationsMatch(request, candidate, prefix, label) {
@@ -527,15 +590,6 @@ const rideController = {
       const user = await ensureUser(userName, userEmail);
       const dbReady = getDbReady();
       const memoryStore = getMemoryStore();
-      const activeMembership = dbReady
-        ? await ConnectionRequest.findOne({ where: { requester_id: user.id, status: 'accepted' } })
-        : memoryStore.connectionRequests.find((entry) => Number(entry.requester_id) === Number(user.id) && entry.status === 'accepted');
-      if (activeMembership) return res.status(409).json({ success: false, message: 'Leave your current ride group before searching again' });
-
-      const existingRequests = await getRequestsForUser(user.id);
-      const openGroup = existingRequests.find((entry) => ['partially_grouped', 'grouped', 'matched'].includes(entry.status));
-      if (openGroup) return res.status(409).json({ success: false, message: 'Finish or leave your current ride group before searching again' });
-      await cancelOpenSearches(user.id);
 
       const request = await createRideRequestRecord({
         origin,
@@ -597,6 +651,22 @@ const rideController = {
 
       const dbReady = getDbReady();
       const memoryStore = getMemoryStore();
+      const reciprocalConnection = dbReady
+        ? await ConnectionRequest.findOne({
+            where: {
+              requester_id: Number(targetRequest.user_id),
+              recipient_id: requesterId,
+              status: { [Op.in]: ['sent', 'accepted'] }
+            }
+          })
+        : memoryStore.connectionRequests.find((entry) =>
+            Number(entry.requester_id) === Number(targetRequest.user_id) &&
+            Number(entry.recipient_id) === requesterId &&
+            ['sent', 'accepted'].includes(entry.status)
+          );
+      if (reciprocalConnection) {
+        return res.status(409).json({ success: false, message: 'A connection request is already pending between these riders' });
+      }
       const existing = dbReady
         ? await ConnectionRequest.findOne({ where: { ride_request_id: targetRequestId, requester_id: requesterId } })
         : memoryStore.connectionRequests.find((entry) => Number(entry.ride_request_id) === targetRequestId && Number(entry.requester_id) === requesterId);
@@ -699,10 +769,10 @@ const rideController = {
       if (dbReady) await connection.update(changes);
       else { Object.assign(connection, changes, { updatedAt: new Date() }); }
       if (status === 'accepted') {
-        await cancelOpenSearches(connection.requester_id);
         if (rideRequest) {
           if (dbReady) await rideRequest.update({ status: 'partially_grouped' });
           else { rideRequest.status = 'partially_grouped'; rideRequest.updatedAt = new Date(); }
+          await markUserSearchesJoined(connection.requester_id);
           await emitRequestUpdated(rideRequest);
         }
       }
@@ -720,6 +790,7 @@ const rideController = {
         recipient: recipient ? { id: recipient.id, name: recipient.name } : null,
         requester: requester ? { id: requester.id, name: requester.name } : null
       };
+      eventPayload.matchId = connection.match_id || null;
       const eventName = `connection${status[0].toUpperCase()}${status.slice(1)}`;
       emitToUser(Number(connection.requester_id), eventName, eventPayload);
       emitToUser(Number(connection.recipient_id), eventName, eventPayload);
@@ -798,12 +869,18 @@ const rideController = {
       if (status === 'grouped' && !['pending', 'connection_requested', 'partially_grouped'].includes(request.status)) {
         return res.status(409).json({ success: false, message: 'This ride group cannot be closed in its current state' });
       }
-      const nextStatus = status === 'grouped' ? 'matched' : status;
-      const changes = { status: nextStatus, ...(status === 'grouped' ? { group_owner_confirmed: true } : {}) };
+      const nextStatus = status === 'grouped' ? 'grouped' : status;
+      const changes = { status: nextStatus, ...(status === 'grouped' ? { group_owner_confirmed: false } : {}) };
       if (getDbReady()) await request.update(changes);
       else { Object.assign(request, changes, { updatedAt: new Date() }); }
+      if (status === 'grouped') {
+        const acceptedConnections = getDbReady()
+          ? await ConnectionRequest.findAll({ where: { ride_request_id: request.id, status: 'accepted' } })
+          : getMemoryStore().connectionRequests.filter((entry) => Number(entry.ride_request_id) === Number(request.id) && entry.status === 'accepted');
+        await createGroupMatch(request, acceptedConnections);
+        await emitGroupMatchFound(request);
+      }
       const payload = await emitRequestUpdated(request);
-      if (status === 'grouped') await emitGroupMatchFound(request);
       res.json({ success: true, request: payload });
     } catch (error) {
       console.error('Error updating ride request:', error);
@@ -817,15 +894,46 @@ const rideController = {
       const userId = Number(req.body.userId);
       const request = await findRequestById(requestId);
       if (!request || !userId) return res.status(404).json({ success: false, message: 'Ride group not found' });
-      if (Number(request.user_id) !== userId) return res.status(403).json({ success: false, message: 'Only the ride owner can confirm this ride group' });
-      if (!['grouped', 'matched'].includes(request.status)) return res.status(409).json({ success: false, message: 'The ride owner must finish finding riders first' });
       const dbReady = getDbReady();
+      const memoryStore = getMemoryStore();
+      if (!['grouped', 'matched'].includes(request.status)) return res.status(409).json({ success: false, message: 'The ride owner must finish finding riders first' });
 
-      if (dbReady) await request.update({ group_owner_confirmed: true });
-      else { request.group_owner_confirmed = true; request.updatedAt = new Date(); }
+      const isOwner = Number(request.user_id) === userId;
+      const connection = !isOwner
+        ? (dbReady
+          ? await ConnectionRequest.findOne({ where: { ride_request_id: request.id, requester_id: userId, status: 'accepted' } })
+          : memoryStore.connectionRequests.find((entry) => Number(entry.ride_request_id) === Number(request.id) && Number(entry.requester_id) === userId && entry.status === 'accepted'))
+        : null;
+      if (!isOwner && !connection) return res.status(403).json({ success: false, message: 'Only riders in this group can confirm it' });
+
+      if (isOwner) {
+        if (dbReady) await request.update({ group_owner_confirmed: true });
+        else { request.group_owner_confirmed = true; request.updatedAt = new Date(); }
+      } else if (dbReady) {
+        await connection.update({ requester_confirmed: true });
+      } else {
+        connection.requester_confirmed = true;
+        connection.updatedAt = new Date();
+      }
+
+      const acceptedConnections = dbReady
+        ? await ConnectionRequest.findAll({ where: { ride_request_id: request.id, status: 'accepted' } })
+        : memoryStore.connectionRequests.filter((entry) => Number(entry.ride_request_id) === Number(request.id) && entry.status === 'accepted');
+      const allConfirmed = Boolean(request.group_owner_confirmed) && acceptedConnections.every((entry) => Boolean(entry.requester_confirmed));
+      if (allConfirmed) {
+        if (dbReady) await request.update({ status: 'matched' });
+        else { request.status = 'matched'; request.updatedAt = new Date(); }
+        const groupMatch = dbReady
+          ? await Match.findByPk(request.match_id)
+          : memoryStore.matches.find((entry) => Number(entry.id) === Number(request.match_id));
+        if (groupMatch) {
+          if (dbReady) await groupMatch.update({ status: 'confirmed' });
+          else { groupMatch.status = 'confirmed'; groupMatch.updatedAt = new Date(); }
+        }
+      }
 
       const payload = await emitRequestUpdated(request);
-      res.json({ success: true, request: payload, matched: request.status === 'matched' });
+      res.json({ success: true, request: payload, matched: allConfirmed, confirmed: allConfirmed });
     } catch (error) {
       console.error('Error confirming group match:', error);
       res.status(500).json({ success: false, message: error.message });

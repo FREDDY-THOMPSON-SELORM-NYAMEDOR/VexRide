@@ -18,7 +18,7 @@ const RideRequest = sequelize.define('RideRequest', {
     allowNull: false,
     defaultValue: 'pending',
     validate: {
-      isIn: [['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched', 'completed', 'withdrawn', 'cancelled']]
+      isIn: [['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched', 'joined', 'completed', 'withdrawn', 'cancelled']]
     }
   },
   group_owner_confirmed: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
