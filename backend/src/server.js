@@ -547,6 +547,7 @@ async function init() {
   try {
     await sequelize.authenticate();
     await sequelize.sync({ alter: true });
+    await sequelize.query('ALTER TABLE "chat_messages" ALTER COLUMN "match_id" DROP NOT NULL');
     setDbReady(true);
     console.log('Database connected');
     await seedData();
