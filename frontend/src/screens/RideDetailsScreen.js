@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { getJson } from '../services/api';
 import ScreenLayout from '../components/ScreenLayout';
 import LiveLocationMap from '../components/LiveLocationMap';
-import { CheckIcon, PinIcon, FlagIcon, ClockIcon, HomeIcon, UsersIcon } from '../components/Icons';
+import { CheckIcon, PinIcon, FlagIcon, ClockIcon, HomeIcon, UsersIcon, ChatIcon } from '../components/Icons';
 import { logError } from '../services/errorHandling';
 
 const heroImage = require('../../assets/images/vex_home_bg_1784946351687.jpg');
@@ -11,6 +11,7 @@ const heroImage = require('../../assets/images/vex_home_bg_1784946351687.jpg');
 export default function RideDetailsScreen({ navigation, route }) {
   const ride = route.params?.ride || {};
   const matchId = route.params?.matchId || ride.matchId || ride.id;
+  const rideRequestId = route.params?.rideRequestId || ride.group_request_id || null;
   const [liveLocationState, setLiveLocationState] = useState(route.params?.liveLocationState || ride.liveLocationState || null);
 
   useEffect(() => {
@@ -102,6 +103,19 @@ export default function RideDetailsScreen({ navigation, route }) {
           </View>
 
         </View>
+
+        <TouchableOpacity
+          className="bg-[#00f2fe] border border-[#00f2fe]/60 p-4 rounded-2xl items-center shadow-xl active:scale-98 flex-row justify-center gap-2 mb-3"
+          onPress={() => navigation.navigate('Chat', {
+            matchId,
+            rideRequestId,
+            request: ride,
+            counterParty: ride.user2_name || ride.user1_name
+          })}
+        >
+          <ChatIcon size={18} color="#061426" />
+          <Text className="text-[#061426] font-black text-base tracking-wide">Open Chat</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           className="bg-[#ff5e36] border border-[#ff5e36]/60 p-4 rounded-2xl items-center shadow-xl active:scale-98 flex-row justify-center gap-2"

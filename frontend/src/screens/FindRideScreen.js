@@ -35,7 +35,11 @@ export default function FindRideScreen({ navigation, route }) {
 
     async function restoreSearchSession() {
       const savedSearch = await getSearchSession();
-      if (!active || !savedSearch) return;
+      if (!active) return;
+      if (!savedSearch) {
+        setActiveSearch(false);
+        return;
+      }
       setOrigin(savedSearch.origin || '');
       setDestination(savedSearch.destination || '');
       setOriginLocation(savedSearch.originLocation || null);

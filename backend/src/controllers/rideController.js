@@ -174,14 +174,25 @@ async function cancelOpenSearches(userId, exceptRequestId) {
   }
 }
 
-async function markUserSearchesJoined(userId) {
-  const requests = await getRequestsForUser(userId);
-  const activeRequests = requests.filter((request) => ['pending', 'connection_requested'].includes(request.status));
-  for (const request of activeRequests) {
-    if (getDbReady()) await request.update({ status: 'joined' });
-    else { request.status = 'joined'; request.updatedAt = new Date(); }
-    await emitRequestUpdated(request);
+async function hasUnfinishedRide(userId) {
+  const numericUserId = Number(userId);
+  const dbReady = getDbReady();
+  const memoryStore = getMemoryStore();
+  const acceptedConnections = dbReady
+    ? await ConnectionRequest.findAll({ where: { requester_id: numericUserId, status: 'accepted' } })
+    : memoryStore.connectionRequests.filter((entry) => Number(entry.requester_id) === numericUserId && entry.status === 'accepted');
+
+  for (const connection of acceptedConnections) {
+    const match = dbReady
+      ? (connection.match_id ? await Match.findByPk(connection.match_id) : null)
+      : memoryStore.matches.find((entry) => Number(entry.id) === Number(connection.match_id));
+    if (!match || match.status !== 'completed') return true;
   }
+
+  const pairMatches = dbReady
+    ? await Match.findAll({ where: { status: 'confirmed', [Op.or]: [{ user1_id: numericUserId }, { user2_id: numericUserId }] } })
+    : memoryStore.matches.filter((entry) => entry.status === 'confirmed' && (Number(entry.user1_id) === numericUserId || Number(entry.user2_id) === numericUserId));
+  return pairMatches.length > 0;
 }
 
 function broadcast(event, payload) {
@@ -654,12 +665,14 @@ const rideController = {
       const reciprocalConnection = dbReady
         ? await ConnectionRequest.findOne({
             where: {
+              ride_request_id: targetRequestId,
               requester_id: Number(targetRequest.user_id),
               recipient_id: requesterId,
               status: { [Op.in]: ['sent', 'accepted'] }
             }
           })
         : memoryStore.connectionRequests.find((entry) =>
+          Number(entry.ride_request_id) === targetRequestId &&
             Number(entry.requester_id) === Number(targetRequest.user_id) &&
             Number(entry.recipient_id) === requesterId &&
             ['sent', 'accepted'].includes(entry.status)
@@ -671,11 +684,9 @@ const rideController = {
         ? await ConnectionRequest.findOne({ where: { ride_request_id: targetRequestId, requester_id: requesterId } })
         : memoryStore.connectionRequests.find((entry) => Number(entry.ride_request_id) === targetRequestId && Number(entry.requester_id) === requesterId);
       if (existing && ['sent', 'accepted'].includes(existing.status)) return res.status(409).json({ success: false, message: 'Connection request already exists', connection: existing });
-      const activeMembership = dbReady
-        ? await ConnectionRequest.findOne({ where: { requester_id: requesterId, status: 'accepted' } })
-        : memoryStore.connectionRequests.find((entry) => Number(entry.requester_id) === requesterId && entry.status === 'accepted');
-      if (activeMembership) return res.status(409).json({ success: false, message: 'Leave your current ride group before joining another' });
-
+      if (await hasUnfinishedRide(requesterId)) {
+        return res.status(409).json({ success: false, message: 'Complete your current ride before joining another' });
+      }
       const connection = existing
         ? (dbReady
           ? await existing.update({ recipient_id: Number(targetRequest.user_id), message: message || null, status: 'sent', requester_confirmed: false })
@@ -749,17 +760,8 @@ const rideController = {
       if (status === 'accepted' && (!rideRequest || !['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched'].includes(rideRequest.status))) {
         return res.status(409).json({ success: false, message: 'This ride group is no longer accepting riders' });
       }
-      if (status === 'accepted') {
-        const requesterRequests = await getRequestsForUser(connection.requester_id);
-        if (requesterRequests.some((entry) => ['partially_grouped', 'grouped', 'matched'].includes(entry.status))) {
-          return res.status(409).json({ success: false, message: 'Leave your current ride group before joining another' });
-        }
-        const existingMembership = dbReady
-          ? await ConnectionRequest.findOne({ where: { requester_id: connection.requester_id, status: 'accepted' } })
-          : memoryStore.connectionRequests.find((entry) => Number(entry.requester_id) === Number(connection.requester_id) && entry.status === 'accepted');
-        if (existingMembership && Number(existingMembership.id) !== Number(connection.id)) {
-          return res.status(409).json({ success: false, message: 'This rider already belongs to another ride group' });
-        }
+      if (status === 'accepted' && await hasUnfinishedRide(connection.requester_id)) {
+        return res.status(409).json({ success: false, message: 'Complete your current ride before joining another' });
       }
       if (status !== 'accepted' && status !== 'declined' && connection.status !== 'sent' && connection.status !== 'accepted') {
         return res.status(409).json({ success: false, message: 'This connection request is no longer active' });
@@ -799,7 +801,6 @@ const rideController = {
             rideRequest.status = 'partially_grouped';
             rideRequest.updatedAt = new Date();
           }
-          await markUserSearchesJoined(connection.requester_id);
           await emitRequestUpdated(rideRequest);
         }
       }
@@ -956,6 +957,15 @@ const rideController = {
         if (groupMatch) {
           if (dbReady) await groupMatch.update({ status: 'confirmed' });
           else { groupMatch.status = 'confirmed'; groupMatch.updatedAt = new Date(); }
+          const participantIds = [
+            Number(request.user_id),
+            ...acceptedConnections.map((entry) => Number(entry.requester_id))
+          ].filter(Boolean);
+          participantIds.forEach((participantId) => emitToUser(participantId, 'rideConfirmed', {
+            matchId: groupMatch.id,
+            status: 'confirmed',
+            match: groupMatch
+          }));
         }
       }
 

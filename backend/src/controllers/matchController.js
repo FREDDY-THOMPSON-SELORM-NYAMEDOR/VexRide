@@ -1,4 +1,4 @@
-const { Match, User, RideRequest } = require('../models');
+const { Match, User, RideRequest, ConnectionRequest } = require('../models');
 const { getDbReady, getMemoryStore } = require('../utils/helpers');
 const { buildLiveMatchState } = require('../utils/liveLocation');
 
@@ -56,6 +56,23 @@ function markRideCompletedIfConfirmed(match) {
   return false;
 }
 
+async function getMatchParticipantIds(match) {
+  if (!match) return [];
+  if (match.match_type !== 'group' || !match.group_request_id) {
+    return [Number(match.user1_id), Number(match.user2_id)].filter(Boolean);
+  }
+
+  const dbReady = getDbReady();
+  const memoryStore = getMemoryStore();
+  const connections = dbReady
+    ? await ConnectionRequest.findAll({ where: { ride_request_id: match.group_request_id, status: 'accepted' } })
+    : memoryStore.connectionRequests.filter((entry) => Number(entry.ride_request_id) === Number(match.group_request_id) && entry.status === 'accepted');
+  const ownerId = dbReady
+    ? (await RideRequest.findByPk(match.group_request_id))?.user_id
+    : memoryStore.rideRequests.find((entry) => Number(entry.id) === Number(match.group_request_id))?.user_id;
+  return [Number(ownerId), ...connections.map((entry) => Number(entry.requester_id))].filter(Boolean);
+}
+
 const matchController = {
   async confirmMatch(req, res) {
     try {
@@ -106,30 +123,59 @@ const matchController = {
 
       let rides;
       if (dbReady) {
-        const { Op } = require('sequelize');
-        rides = await Match.findAll({
-          where: {
-            status: 'confirmed', 
-            [Op.or]: [
-              { user1_id: numUserId },
-              { user2_id: numUserId }
-            ]
-          }
-        });
-        rides = await Promise.all(rides.map(async (ride) => ({
-          ...(ride.get ? ride.get({ plain: true }) : ride),
-          liveLocationState: await getLiveMatchState(ride)
-        })));
+        const confirmedRides = await Match.findAll({ where: { status: ['confirmed', 'completed'] } });
+        rides = [];
+        for (const ride of confirmedRides) {
+          const isPairParticipant = ride.user1_id === numUserId || ride.user2_id === numUserId;
+          const isGroupParticipant = ride.match_type === 'group' && ride.group_request_id
+            && (await RideRequest.findOne({ where: { id: ride.group_request_id, user_id: numUserId } })
+              || await ConnectionRequest.findOne({ where: { ride_request_id: ride.group_request_id, requester_id: numUserId, status: 'accepted' } }));
+          if (isPairParticipant || isGroupParticipant) rides.push(ride);
+        }
+        rides = await Promise.all(rides.map(async (ride) => {
+          const groupConnection = ride.match_type === 'group' && ride.group_request_id
+            ? await ConnectionRequest.findOne({
+                where: { ride_request_id: ride.group_request_id, requester_id: numUserId, status: 'accepted' },
+                attributes: ['id']
+              })
+            : null;
+          return {
+            ...(ride.get ? ride.get({ plain: true }) : ride),
+            groupConnectionId: groupConnection?.id || null,
+            liveLocationState: await getLiveMatchState(ride)
+          };
+        }));
       } else {
         rides = await Promise.all(memoryStore.matches
-          .filter((m) => m.status === 'confirmed' && (m.user1_id === numUserId || m.user2_id === numUserId))
+          .filter((m) => {
+            if (!['confirmed', 'completed'].includes(m.status)) return false;
+            if (m.user1_id === numUserId || m.user2_id === numUserId) return true;
+            if (m.match_type !== 'group' || !m.group_request_id) return false;
+            const request = memoryStore.rideRequests.find((entry) => Number(entry.id) === Number(m.group_request_id));
+            return Number(request?.user_id) === numUserId || memoryStore.connectionRequests.some((entry) =>
+              Number(entry.ride_request_id) === Number(m.group_request_id)
+              && Number(entry.requester_id) === numUserId
+              && entry.status === 'accepted'
+            );
+          })
           .map(async (ride) => ({
             ...ride,
+            groupConnectionId: ride.match_type === 'group'
+              ? memoryStore.connectionRequests.find((entry) =>
+                  Number(entry.ride_request_id) === Number(ride.group_request_id)
+                  && Number(entry.requester_id) === numUserId
+                  && entry.status === 'accepted'
+                )?.id || null
+              : null,
             liveLocationState: await getLiveMatchState(ride)
           })));
       }
 
-      res.json({ success: true, rides });
+      res.json({
+        success: true,
+        rides: rides.filter((ride) => ride.status === 'confirmed'),
+        completedRides: rides.filter((ride) => ride.status === 'completed')
+      });
     } catch (error) {
       console.error('Error fetching active rides:', error);
       res.status(500).json({ success: false, message: error.message });
@@ -151,32 +197,36 @@ const matchController = {
 
       if (!match) return res.status(404).json({ success: false, message: 'Match not found' });
 
-      if (userId === match.user1_id) {
-        match.user1_completed_confirmed = true;
-      } else if (userId === match.user2_id) {
-        match.user2_completed_confirmed = true;
-      } else {
+      const participantIds = await getMatchParticipantIds(match);
+      if (!participantIds.includes(Number(userId))) {
         return res.status(400).json({ success: false, message: 'User is not part of this match' });
       }
 
-      const rideCompleted = markRideCompletedIfConfirmed(match);
+      let rideCompleted = false;
+      if (match.match_type === 'group') {
+        const confirmations = Array.isArray(match.completion_confirmations) ? match.completion_confirmations.map(Number) : [];
+        if (!confirmations.includes(Number(userId))) confirmations.push(Number(userId));
+        match.completion_confirmations = confirmations;
+        rideCompleted = match.status !== 'completed' && participantIds.every((participantId) => confirmations.includes(participantId));
+      } else {
+        if (Number(userId) === Number(match.user1_id)) match.user1_completed_confirmed = true;
+        if (Number(userId) === Number(match.user2_id)) match.user2_completed_confirmed = true;
+        rideCompleted = markRideCompletedIfConfirmed(match);
+      }
+      if (rideCompleted) match.status = 'completed';
 
       if (dbReady) {
         await match.save();
       }
 
-      emitToUser(match.user1_id, 'rideCompletionUpdate', {
+      const completionPayload = {
         matchId,
         user1_completed_confirmed: match.user1_completed_confirmed,
         user2_completed_confirmed: match.user2_completed_confirmed,
+        completionConfirmations: match.completion_confirmations || [],
         status: match.status
-      });
-      emitToUser(match.user2_id, 'rideCompletionUpdate', {
-        matchId,
-        user1_completed_confirmed: match.user1_completed_confirmed,
-        user2_completed_confirmed: match.user2_completed_confirmed,
-        status: match.status
-      });
+      };
+      participantIds.forEach((participantId) => emitToUser(participantId, 'rideCompletionUpdate', completionPayload));
 
       if (rideCompleted) {
         if (dbReady) {

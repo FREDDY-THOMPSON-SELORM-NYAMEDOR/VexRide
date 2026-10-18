@@ -16,6 +16,7 @@ const Match = sequelize.define('Match', {
   user2_confirmed: { type: DataTypes.BOOLEAN, defaultValue: false },
   user1_completed_confirmed: { type: DataTypes.BOOLEAN, defaultValue: false },
   user2_completed_confirmed: { type: DataTypes.BOOLEAN, defaultValue: false },
+  completion_confirmations: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   user1_payment_status: { type: DataTypes.STRING, defaultValue: 'pending' },
   user2_payment_status: { type: DataTypes.STRING, defaultValue: 'pending' },
   pickup_location: { type: DataTypes.STRING, allowNull: true },

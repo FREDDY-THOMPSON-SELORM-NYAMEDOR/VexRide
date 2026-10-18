@@ -4,6 +4,7 @@ import ScreenLayout from '../components/ScreenLayout';
 import { getJson, postJson } from '../services/api';
 import { getStoredUser } from '../services/user';
 import { onSocket } from '../services/socket';
+import { clearSearchSession } from '../services/searchSession';
 import { FlagIcon, PinIcon, SearchIcon } from '../components/Icons';
 import { friendlyError, logError } from '../services/errorHandling';
 
@@ -59,8 +60,9 @@ export default function DiscoverRidersScreen({ navigation, route }) {
         ? { ...rider, connectionStatus: status }
         : rider));
     };
-    const cleanAccepted = onSocket('connectionAccepted', (connection) => {
+    const cleanAccepted = onSocket('connectionAccepted', async (connection) => {
       if (Number(connection.requester_id) !== Number(user?.id)) return;
+      await clearSearchSession();
       applyResponse('accepted')(connection);
       navigation.navigate('MyRequests');
     });
