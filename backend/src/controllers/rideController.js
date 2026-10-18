@@ -842,12 +842,19 @@ const rideController = {
         const request = await RideRequest.findOne({ where: { id: requestId, user_id: userId } });
         if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
         await request.update({ status: 'cancelled' });
+        await Match.update(
+          { status: 'cancelled' },
+          { where: { [Op.or]: [{ ride1_id: requestId }, { ride2_id: requestId }, { group_request_id: requestId }] } }
+        );
         await emitRequestUpdated(request);
       } else {
         const request = memoryStore.rideRequests.find((entry) => entry.id === Number(requestId) && entry.user_id === Number(userId));
         if (!request) return res.status(404).json({ success: false, message: 'Ride request not found' });
         request.status = 'cancelled';
         request.updatedAt = new Date();
+        memoryStore.matches
+          .filter((match) => match.ride1_id === Number(requestId) || match.ride2_id === Number(requestId) || match.group_request_id === Number(requestId))
+          .forEach((match) => { match.status = 'cancelled'; match.updatedAt = new Date(); });
         await emitRequestUpdated(request);
       }
 
