@@ -19,7 +19,7 @@ import AuthScreen from '../screens/AuthScreen';
 import { getStoredUser } from '../services/user';
 import { getJson } from '../services/api';
 import { onSocket } from '../services/socket';
-import { incrementUnread, isActiveChatMatch, setUnreadCount } from '../services/chatBadge';
+import { getChatRoomId, incrementUnread, isActiveChatMatch, setUnreadState } from '../services/chatBadge';
 import { logError } from '../services/errorHandling';
 import { clearSearchSession } from '../services/searchSession';
 
@@ -30,6 +30,7 @@ export default function AppNavigator() {
   const [initialRoute, setInitialRoute] = useState('Auth');
   const [ready, setReady] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(null);
+  const [messageNotice, setMessageNotice] = useState(null);
 
   useEffect(() => {
     async function loadUser() {
@@ -48,7 +49,7 @@ export default function AppNavigator() {
       if (!active || !user?.id) return;
       try {
         const result = await getJson(`/messages/unread/${user.id}`);
-        if (active) setUnreadCount(result.unreadCount);
+        if (active) setUnreadState(result.unreadCount, result.unreadByRoom);
       } catch (error) {
         logError('Load unread messages', error);
       }
@@ -56,8 +57,15 @@ export default function AppNavigator() {
 
     const cleanMessage = onSocket('chatMessage', (message) => {
       getStoredUser().then((user) => {
-        const isRecipient = user?.id && Number(message.receiverId) === Number(user.id);
-        if (isRecipient && !message.seen && !isActiveChatMatch(message.matchId)) incrementUnread();
+        const isRecipient = user?.id && (
+          Number(message.receiverId) === Number(user.id)
+          || (message.rideRequestId && Number(message.userId) !== Number(user.id))
+        );
+        const roomId = getChatRoomId(message.matchId, message.rideRequestId);
+        if (isRecipient && !message.seen && !isActiveChatMatch(roomId)) {
+          incrementUnread(roomId);
+          setMessageNotice(message);
+        }
       });
     });
 
@@ -121,6 +129,42 @@ export default function AppNavigator() {
         <Stack.Screen name="MyRequests" component={MyRequestsScreen} />
         <Stack.Screen name="TrackingHub" component={TrackingHubScreen} />
       </Stack.Navigator>
+      <Modal
+        visible={Boolean(messageNotice)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMessageNotice(null)}
+      >
+        <View className="flex-1 bg-black/70 items-center justify-center px-5">
+          <View className="w-full max-w-sm bg-[#0b172a] border border-[#ff5e36]/50 rounded-3xl p-6">
+            <Text className="text-white text-xl font-black">New message</Text>
+            <Text className="text-[#c9e5f4] text-sm leading-5 mt-2" numberOfLines={3}>
+              {messageNotice?.senderName || 'A rider'}: {messageNotice?.message}
+            </Text>
+            <View className="flex-row gap-3 mt-5">
+              <TouchableOpacity
+                className="flex-1 py-3.5 rounded-2xl bg-white/[0.08] border border-white/[0.15] items-center"
+                onPress={() => setMessageNotice(null)}
+              >
+                <Text className="text-[#c9e5f4] font-bold">Later</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 py-3.5 rounded-2xl bg-[#ff5e36] items-center"
+                onPress={() => {
+                  const message = messageNotice;
+                  setMessageNotice(null);
+                  if (navigationRef.isReady()) navigationRef.navigate('Chat', {
+                    matchId: message.matchId,
+                    rideRequestId: message.rideRequestId
+                  });
+                }}
+              >
+                <Text className="text-white font-black">Open chat</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(connectionNotice)}
         transparent

@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import ScreenLayout from '../components/ScreenLayout';
 import { SearchIcon, TrackingIcon } from '../components/Icons';
+import ChatUnreadBadge from '../components/ChatUnreadBadge';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
@@ -44,6 +45,7 @@ export default function TrackingHubScreen({ navigation, route }) {
             <Text className="text-white text-base font-black">Current rides</Text>
             <Text className="text-[#8eb4c6] text-xs mt-1">View trip details and chat with your group.</Text>
           </View>
+          <ChatUnreadBadge />
           <Text className="text-[#ff5e36] text-2xl font-black">›</Text>
         </TouchableOpacity>
       </View>

@@ -126,10 +126,12 @@ io.on('connection', (socket) => {
     let numericRequestId = null;
     let receiverId = null;
     let roomName;
+    let chatParticipantIds = [];
     if (rideRequestId) {
       numericRequestId = Number(rideRequestId);
       if (!await canAccessGroupChat(numericRequestId, senderId)) return;
       roomName = `chat:request:${numericRequestId}`;
+      chatParticipantIds = (await getGroupChatParticipants(numericRequestId)).map((participant) => Number(participant.id)).filter(Boolean);
     } else {
       numericMatchId = Number(matchId);
       const match = dbReady
@@ -140,6 +142,7 @@ io.on('connection', (socket) => {
       const senderIsUser2 = Number(match.user2_id) === senderId;
       if (!senderIsUser1 && !senderIsUser2) return;
       receiverId = senderIsUser1 ? Number(match.user2_id) : Number(match.user1_id);
+      chatParticipantIds = [Number(match.user1_id), Number(match.user2_id)].filter(Boolean);
       roomName = `chat:${numericMatchId}`;
     }
     const sender = dbReady
@@ -189,7 +192,7 @@ io.on('connection', (socket) => {
       });
     }
 
-    io.to(roomName).emit('chatMessage', payload);
+    chatParticipantIds.forEach((participantId) => io.to(`user:${participantId}`).emit('chatMessage', payload));
   });
 
   socket.on('messageSeen', async ({ matchId, messageId, userId }) => {
@@ -358,11 +361,24 @@ app.get('/messages/unread/:userId', async (req, res) => {
     const userId = Number(req.params.userId);
     if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
-    const unreadCount = getDbReady()
-      ? await ChatMessage.count({ where: { receiver_id: userId, seen: false } })
-      : getMemoryStore().chatMessages.filter((message) => Number(message.receiver_id) === userId && !message.seen).length;
+    const unreadByRoom = {};
+    const unreadMessages = getDbReady()
+      ? await ChatMessage.findAll({ where: { seen: false } })
+      : getMemoryStore().chatMessages.filter((message) => !message.seen);
+    for (const message of unreadMessages) {
+      const isDirectMessage = Number(message.receiver_id) === userId;
+      const isGroupMessage = message.ride_request_id
+        && Number(message.user_id) !== userId
+        && await canAccessGroupChat(message.ride_request_id, userId);
+      if (!isDirectMessage && !isGroupMessage) continue;
+      const roomId = message.ride_request_id
+        ? `request:${message.ride_request_id}`
+        : `match:${message.match_id}`;
+      unreadByRoom[roomId] = (unreadByRoom[roomId] || 0) + 1;
+    }
+    const unreadCount = Object.values(unreadByRoom).reduce((total, count) => total + count, 0);
 
-    res.json({ success: true, unreadCount });
+    res.json({ success: true, unreadCount, unreadByRoom });
   } catch (error) {
     console.error('Error loading unread messages:', error);
     res.status(500).json({ success: false, message: error.message });

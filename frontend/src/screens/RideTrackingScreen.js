@@ -7,6 +7,8 @@ import ScreenLayout from '../components/ScreenLayout';
 import LiveLocationMap from '../components/LiveLocationMap';
 import { TrackingIcon, CheckIcon, CarIcon } from '../components/Icons';
 import { friendlyError, logError } from '../services/errorHandling';
+import ChatUnreadBadge from '../components/ChatUnreadBadge';
+import { getChatRoomId } from '../services/chatBadge';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
@@ -170,6 +172,7 @@ export default function RideTrackingScreen({ navigation, route }) {
                     onPress={() => openRideDetails(ride)}
                   >
                     <Text className="text-[#00f2fe] font-black text-xs uppercase tracking-wider">View Ride Details</Text>
+                    <ChatUnreadBadge roomId={getChatRoomId(ride.id, ride.group_request_id)} />
                   </TouchableOpacity>
                   {ride.groupConnectionId ? (
                     <TouchableOpacity

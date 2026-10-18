@@ -4,7 +4,7 @@ import { getJson, patchJson } from '../services/api';
 import ScreenLayout from '../components/ScreenLayout';
 import { getStoredUser } from '../services/user';
 import { joinChatRoom, joinUser, markMessageSeen, onSocket, onSocketConnect, sendChatMessage, sendTypingStart, sendTypingStop, socket } from '../services/socket';
-import { isActiveChatMatch, resetUnread, setActiveChatMatchId } from '../services/chatBadge';
+import { getChatRoomId, isActiveChatMatch, resetUnread, setActiveChatMatchId } from '../services/chatBadge';
 import { logError } from '../services/errorHandling';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
@@ -12,6 +12,7 @@ const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 export default function ChatScreen({ navigation, route }) {
   const { matchId, rideRequestId, request, counterParty } = route.params || {};
   const chatRoomId = rideRequestId || matchId;
+  const chatRoomKey = getChatRoomId(matchId, rideRequestId);
   const isGroupChat = Boolean(rideRequestId);
   const [currentUser, setCurrentUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -65,7 +66,7 @@ export default function ChatScreen({ navigation, route }) {
   useEffect(() => {
     if (!chatRoomId || !currentUser?.id) return undefined;
 
-    setActiveChatMatchId(chatRoomId);
+    setActiveChatMatchId(chatRoomKey);
 
     let active = true;
     const joinAndLoadMessages = () => {
@@ -78,7 +79,7 @@ export default function ChatScreen({ navigation, route }) {
           if (!active) return;
           setMessages((existingMessages) => mergeMessages(existingMessages, result.messages || []));
           setParticipants(result.participants || []);
-          resetUnread();
+          resetUnread(chatRoomKey);
           (result.messages || []).filter((message) => currentUser?.id && String(getSenderId(message)) !== String(currentUser.id) && !message.seen)
             .forEach((message) => {
               if (!message.id) return;
@@ -105,7 +106,7 @@ export default function ChatScreen({ navigation, route }) {
         markMessageSeen({ matchId, messageId: incomingMessage.id, userId: currentUser?.id });
         patchJson(`/messages/${incomingMessage.id}/seen`, { userId: currentUser?.id }).catch(() => {});
       }
-      if (!isOwnMessage) resetUnread();
+      if (!isOwnMessage) resetUnread(chatRoomKey);
     });
 
     const cleanSeen = onSocket('onMessageSeen', ({ matchId: incomingMatchId, messageId }) => {
@@ -133,7 +134,7 @@ export default function ChatScreen({ navigation, route }) {
 
     return () => {
       active = false;
-      if (isActiveChatMatch(chatRoomId)) setActiveChatMatchId(null);
+      if (isActiveChatMatch(chatRoomKey)) setActiveChatMatchId(null);
       cleanConnection();
       cleanMessage();
       cleanSeen();
@@ -143,11 +144,11 @@ export default function ChatScreen({ navigation, route }) {
       if (typingTimer.current) clearTimeout(typingTimer.current);
       sendTypingStop(matchId, rideRequestId);
     };
-  }, [matchId, rideRequestId, chatRoomId, isGroupChat, currentUser?.id]);
+  }, [matchId, rideRequestId, chatRoomId, chatRoomKey, isGroupChat, currentUser?.id]);
 
   useEffect(() => {
-    resetUnread();
-  }, []);
+    resetUnread(chatRoomKey);
+  }, [chatRoomKey]);
 
   function handleDraftChange(value) {
     setDraft(value);

@@ -6,6 +6,8 @@ import { onSocket } from '../services/socket';
 import ScreenLayout from '../components/ScreenLayout';
 import { ClockIcon, FlagIcon, PinIcon, SearchIcon } from '../components/Icons';
 import { friendlyError, logError } from '../services/errorHandling';
+import ChatUnreadBadge from '../components/ChatUnreadBadge';
+import { getChatRoomId } from '../services/chatBadge';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 const activeStatuses = ['pending', 'connection_requested', 'partially_grouped', 'grouped'];
@@ -177,6 +179,7 @@ export default function MyRequestsScreen({ navigation, route }) {
                 <View style={{ backgroundColor: `${color}25`, borderColor: `${color}80` }} className="px-3 py-1.5 rounded-full border">
                   <Text style={{ color }} className="font-black text-[10px]">{statusLabel(request.status)}</Text>
                 </View>
+                <ChatUnreadBadge roomId={getChatRoomId(request.matchId, request._id)} />
               </View>
             </TouchableOpacity>
           );
