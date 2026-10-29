@@ -63,13 +63,13 @@ export default function AuthScreen({ navigation, route }) {
           {/* Brand Header */}
           <View className="items-center mb-6">
             <View className="w-12 h-12 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/50 items-center justify-center mb-3 shadow-lg">
-              <ZapIcon size={24} color="#00f2fe" />
+              <ZapIcon size={24} color="#06ecf8" />
             </View>
             <Text className="text-2xl font-black text-white tracking-tight">
               {mode === 'signup' ? 'Create Account' : 'Welcome Back'}
             </Text>
             <Text className="text-[#8eb4c6] text-xs text-center mt-1">
-              {mode === 'signup' ? 'Join VexRide for instant matching & group sharing' : 'Sign in to access your rider profile & active trips'}
+              {mode === 'signup' ? 'Create an account to find and plan rides with others' : 'Sign in to manage your rides'}
             </Text>
           </View>
 

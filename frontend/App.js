@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
 import AppNavigator from './src/navigation/AppNavigator';
-import { joinUser, socket, onSocketConnect } from './src/services/socket';
+import { joinUser } from './src/services/socket';
 import { getStoredUser } from './src/services/user';
 import { startLiveLocationTracking, stopLiveLocationTracking } from './src/services/liveLocation';
 
@@ -9,7 +9,6 @@ import { startLiveLocationTracking, stopLiveLocationTracking } from './src/servi
 import './global.css';
 
 export default function App() {
-  const userIdRef = useRef(null);
   const stopTrackingRef = useRef(null);
 
   useEffect(() => {
@@ -17,9 +16,7 @@ export default function App() {
     async function initUser() {
       const user = await getStoredUser();
       if (!mounted) return;
-      userIdRef.current = user?.id || null;
       if (user?.id) {
-        if (!socket.connected) socket.connect();
         joinUser(user.id);
         stopTrackingRef.current = await startLiveLocationTracking(user.id);
         console.log('User connected!');
@@ -33,13 +30,6 @@ export default function App() {
       stopTrackingRef.current?.();
       stopLiveLocationTracking();
     };
-  }, []);
-
-  useEffect(() => {
-    const cleanup = onSocketConnect(() => {
-      if (userIdRef.current) joinUser(userIdRef.current);
-    });
-    return () => cleanup?.();
   }, []);
 
   return <AppNavigator />;

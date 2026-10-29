@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import ScreenLayout from '../components/ScreenLayout';
 import { SearchIcon, TrackingIcon } from '../components/Icons';
+import ChatUnreadBadge from '../components/ChatUnreadBadge';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
@@ -13,8 +14,8 @@ export default function TrackingHubScreen({ navigation, route }) {
           <View className="w-14 h-14 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/40 items-center justify-center mb-3">
             <TrackingIcon size={25} color="#00f2fe" />
           </View>
-          <Text className="text-2xl font-black text-white">Tracking</Text>
-          <Text className="text-[#8eb4c6] text-xs text-center mt-1">Manage requests and follow matched rides</Text>
+          <Text className="text-2xl font-black text-white">My rides</Text>
+          <Text className="text-[#8eb4c6] text-xs text-center mt-1">Manage your requests and current rides.</Text>
         </View>
 
         <TouchableOpacity
@@ -26,8 +27,8 @@ export default function TrackingHubScreen({ navigation, route }) {
             <SearchIcon size={21} color="#00f2fe" />
           </View>
           <View className="flex-1">
-            <Text className="text-white text-base font-black">My Requests</Text>
-            <Text className="text-[#8eb4c6] text-xs mt-1">View, cancel, and complete your ride requests</Text>
+            <Text className="text-white text-base font-black">My ride requests</Text>
+            <Text className="text-[#8eb4c6] text-xs mt-1">View or cancel a request.</Text>
           </View>
           <Text className="text-[#00f2fe] text-2xl font-black">›</Text>
         </TouchableOpacity>
@@ -41,9 +42,10 @@ export default function TrackingHubScreen({ navigation, route }) {
             <TrackingIcon size={21} color="#ff5e36" />
           </View>
           <View className="flex-1">
-            <Text className="text-white text-base font-black">Matched Rides</Text>
-            <Text className="text-[#8eb4c6] text-xs mt-1">Open confirmed rides, maps, and rider chat</Text>
+            <Text className="text-white text-base font-black">Current rides</Text>
+            <Text className="text-[#8eb4c6] text-xs mt-1">View trip details and chat with your group.</Text>
           </View>
+          <ChatUnreadBadge />
           <Text className="text-[#ff5e36] text-2xl font-black">›</Text>
         </TouchableOpacity>
       </View>
