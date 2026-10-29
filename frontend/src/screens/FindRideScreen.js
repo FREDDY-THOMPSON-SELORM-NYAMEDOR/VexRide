@@ -35,7 +35,11 @@ export default function FindRideScreen({ navigation, route }) {
 
     async function restoreSearchSession() {
       const savedSearch = await getSearchSession();
-      if (!active || !savedSearch) return;
+      if (!active) return;
+      if (!savedSearch) {
+        setActiveSearch(false);
+        return;
+      }
       setOrigin(savedSearch.origin || '');
       setDestination(savedSearch.destination || '');
       setOriginLocation(savedSearch.originLocation || null);
@@ -187,9 +191,7 @@ export default function FindRideScreen({ navigation, route }) {
         userEmail: APP_USER.email
       });
       await saveSearchSession({ ...search, requestId: data.request?.id });
-      if (data.match) await clearSearchSession();
-      console.log(data)
-      navigation.navigate('MatchResult', { origin, destination, time, match: data.match, request: data.request });
+      navigation.navigate('DiscoverRiders', { request: data.request });
     } catch (err) { logError('Find ride', err); setError(friendlyError(err, 'Could not find a ride. Please try again.')); } finally { setLoading(false); }
   }
 
@@ -239,8 +241,8 @@ export default function FindRideScreen({ navigation, route }) {
               <SearchIcon size={20} color="#00f2fe" />
             </View>
             <View className="flex-1 min-w-0">
-              <Text className="text-xl font-black text-white">Find Your Ride Partner</Text>
-              <Text className="text-[#8eb4c6] text-xs">Search live shared routes nearby</Text>
+              <Text className="text-xl font-black text-white">Create a ride request</Text>
+              <Text className="text-[#8eb4c6] text-xs">Add your route, then choose who rides with you.</Text>
             </View>
           </View>
 
@@ -249,7 +251,7 @@ export default function FindRideScreen({ navigation, route }) {
             <View className="flex-row items-center gap-3 mb-3">
               <PinIcon size={18} color="#00f2fe" />
               <View className="flex-1 min-w-0 bg-[#061426]/70 rounded-xl border border-white/[0.14] px-3 py-2">
-                <Text className="text-[#8eb4c6] text-[10px] uppercase font-bold">Pick-up Origin</Text>
+                <Text className="text-[#8eb4c6] text-[10px] uppercase font-bold">Starting point</Text>
                 <TextInput
                   className="text-white font-extrabold text-sm md:text-base p-0 pt-1"
                   placeholder="Enter pickup location"
@@ -264,7 +266,7 @@ export default function FindRideScreen({ navigation, route }) {
                   disabled={currentLocationLoading}
                 >
                   <Text className="text-[#00f2fe] text-[10px] font-black">
-                    {currentLocationLoading ? 'Requesting location...' : 'Use my current location'}
+                    {currentLocationLoading ? 'Getting your location...' : 'Use current location'}
                   </Text>
                 </TouchableOpacity>
                 {usingCurrentLocation ? <Text className="text-[#7ee787] text-[10px] font-bold mt-1">GPS origin selected</Text> : null}
@@ -279,7 +281,7 @@ export default function FindRideScreen({ navigation, route }) {
                   </View>
                 ) : null}
                   <TouchableOpacity className="mt-1 self-start" onPress={() => setLocationPickerField('origin')}>
-                    <Text className="text-[#00f2fe] text-[10px] font-black">Choose on map</Text>
+                    <Text className="text-[#00f2fe] text-[10px] font-black">Pick on map</Text>
                   </TouchableOpacity>
               </View>
             </View>
@@ -289,7 +291,7 @@ export default function FindRideScreen({ navigation, route }) {
             <View className="flex-row items-center gap-3">
               <FlagIcon size={18} color="#ff5e36" />
               <View className="flex-1 min-w-0 bg-[#061426]/70 rounded-xl border border-white/[0.14] px-3 py-2">
-                <Text className="text-[#8eb4c6] text-[10px] uppercase font-bold">Drop-off Destination</Text>
+                <Text className="text-[#8eb4c6] text-[10px] uppercase font-bold">Destination</Text>
                 <TextInput
                   className="text-white font-extrabold text-sm md:text-base p-0 pt-1"
                   placeholder="Enter destination"
@@ -309,7 +311,7 @@ export default function FindRideScreen({ navigation, route }) {
                   </View>
                 ) : null}
                   <TouchableOpacity className="mt-1 self-start" onPress={() => setLocationPickerField('destination')}>
-                    <Text className="text-[#00f2fe] text-[10px] font-black">Choose on map</Text>
+                    <Text className="text-[#00f2fe] text-[10px] font-black">Pick on map</Text>
                   </TouchableOpacity>
               </View>
             </View>
@@ -324,7 +326,7 @@ export default function FindRideScreen({ navigation, route }) {
               <View className="flex-1 bg-[#050c1a]/85 items-center justify-center px-5">
                 <View className="w-full max-w-lg bg-[#0b172a] border border-[#00f2fe]/35 rounded-3xl p-5 shadow-2xl">
                   <Text className="text-white text-lg font-black mb-1">Choose {locationPickerField === 'origin' ? 'pickup' : 'destination'} on map</Text>
-                  <Text className="text-[#8eb4c6] text-xs mb-4">Pick a nearby point so riders can match within walking distance.</Text>
+                  <Text className="text-[#8eb4c6] text-xs mb-4">Tap the map to choose this place.</Text>
                   <LocationPickerMap
                     value={locationPickerField === 'origin' ? originLocation : destinationLocation}
                     onSelect={handleMapLocationSelect}
@@ -374,7 +376,7 @@ export default function FindRideScreen({ navigation, route }) {
                   </View>
                   <View>
                     <Text className="text-white text-lg font-black">Departure time</Text>
-                    <Text className="text-[#8eb4c6] text-xs">When should we look for your ride?</Text>
+                    <Text className="text-[#8eb4c6] text-xs">When would you like to leave?</Text>
                   </View>
                 </View>
 
@@ -457,7 +459,7 @@ export default function FindRideScreen({ navigation, route }) {
             ) : (
               <>
                 <Text className="text-white font-black text-sm md:text-base tracking-wide">
-                  {activeSearch ? 'Cancel Search' : 'Search Matches'}
+                  {activeSearch ? 'Cancel request' : 'Create request'}
                 </Text>
               </>
             )}
