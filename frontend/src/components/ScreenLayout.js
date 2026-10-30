@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Text, ImageBackground } from 'react-native';
+import { View, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Image, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomNav from './BottomNav';
 import { ArrowLeftIcon } from './Icons';
@@ -54,9 +54,11 @@ export default function ScreenLayout({ navigation, route, children, refreshContr
                 </TouchableOpacity>
               ) : (
                 <View className="flex-row items-center gap-2.5 bg-black/40 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
-                  <View className="w-8 h-8 rounded-xl bg-[#00f2fe]/20 border border-[#00f2fe]/40 items-center justify-center shadow-md">
-                    <Text className="text-[#00f2fe] font-black text-sm">V</Text>
-                  </View>
+                  <Image
+                    source={require('../../assets/icon.png')}
+                    resizeMode="contain"
+                    style={{ width: 32, height: 32, borderRadius: 10 }}
+                  />
                   <Text className="text-white font-black text-lg tracking-wider">VEX<Text className="text-[#00f2fe]">RIDE</Text></Text>
                 </View>
               )}
