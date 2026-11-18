@@ -10,7 +10,7 @@ const { setDbReady, setMemoryStore, getMemoryStore, getDbReady } = require('./ut
 
 // Controllers
 const userController = require('./controllers/userController');
-const { rideController, setIO: setRideIO } = require('./controllers/rideController');
+const { rideController, setIO: setRideIO, expireUnmatchedRequests } = require('./controllers/rideController');
 const { matchController, setIO: setMatchIO } = require('./controllers/matchController');
 const { paymentController, setIO: setPaymentIO } = require('./controllers/paymentController');
 const { groupController, setIO: setGroupIO } = require('./controllers/groupController');
@@ -581,6 +581,12 @@ async function init() {
       connectionRequests: []
     });
   }
+
+  const expireRequests = () => {
+    expireUnmatchedRequests().catch((error) => console.error('Error expiring unmatched ride requests:', error));
+  };
+  expireRequests();
+  setInterval(expireRequests, 60 * 1000).unref();
 
   const port = process.env.PORT || 4000;
   server.listen(port, () => console.log(`VEX backend listening on ${port}`));

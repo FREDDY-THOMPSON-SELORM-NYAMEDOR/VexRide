@@ -5,6 +5,8 @@ const { Op } = require('sequelize');
 
 let io;
 const LOCATION_MATCH_RADIUS_METERS = 2500;
+const REQUEST_EXPIRY_MS = 60 * 60 * 1000;
+const SEARCHABLE_REQUEST_STATUSES = ['pending', 'connection_requested', 'partially_grouped'];
 
 function setIO(socketIO) {
   io = socketIO;
@@ -12,6 +14,38 @@ function setIO(socketIO) {
 
 function emitToUser(userId, event, payload) {
   if (io) io.to(`user:${userId}`).emit(event, payload);
+}
+
+function isUnmatchedRequestExpired(request, now = Date.now()) {
+  const requestedTime = new Date(request.time).getTime();
+  return SEARCHABLE_REQUEST_STATUSES.includes(request.status) &&
+    !request.match_id &&
+    Number.isFinite(requestedTime) &&
+    requestedTime + REQUEST_EXPIRY_MS <= now;
+}
+
+async function expireUnmatchedRequests(now = Date.now()) {
+  const dbReady = getDbReady();
+  const memoryStore = getMemoryStore();
+  const expirationCutoff = new Date(now - REQUEST_EXPIRY_MS);
+  const expiredRequests = dbReady
+    ? await RideRequest.findAll({
+        where: {
+          status: { [Op.in]: SEARCHABLE_REQUEST_STATUSES },
+          match_id: null,
+          time: { [Op.lte]: expirationCutoff }
+        }
+      })
+    : memoryStore.rideRequests.filter((request) => isUnmatchedRequestExpired(request, now));
+
+  for (const request of expiredRequests) {
+    if (dbReady) await request.update({ status: 'cancelled' });
+    else {
+      request.status = 'cancelled';
+      request.updatedAt = new Date(now);
+    }
+    await emitRequestUpdated(request);
+  }
 }
 
 function normalizeRideParticipant(record) {
@@ -223,14 +257,23 @@ function compatibilityScore(request, candidate, groupSize = 1) {
 async function getMarketplaceRequests(userId, requestId) {
   const dbReady = getDbReady();
   const memoryStore = getMemoryStore();
+  await expireUnmatchedRequests();
   const ownRequest = dbReady
     ? await RideRequest.findOne({ where: { id: Number(requestId), user_id: Number(userId) } })
     : memoryStore.rideRequests.find((entry) => Number(entry.id) === Number(requestId) && Number(entry.user_id) === Number(userId));
-  if (!ownRequest) return null;
+  if (!ownRequest || !SEARCHABLE_REQUEST_STATUSES.includes(ownRequest.status) || isUnmatchedRequestExpired(ownRequest)) return null;
 
   const candidates = dbReady
-    ? await RideRequest.findAll({ where: { user_id: { [Op.ne]: Number(userId) }, status: { [Op.in]: ['pending', 'connection_requested', 'partially_grouped'] } }, order: [['time', 'ASC']] })
-    : memoryStore.rideRequests.filter((entry) => Number(entry.user_id) !== Number(userId) && ['pending', 'connection_requested', 'partially_grouped'].includes(entry.status));
+    ? await RideRequest.findAll({
+        where: {
+          user_id: { [Op.ne]: Number(userId) },
+          status: { [Op.in]: SEARCHABLE_REQUEST_STATUSES },
+          match_id: null,
+          time: { [Op.gt]: new Date(Date.now() - REQUEST_EXPIRY_MS) }
+        },
+        order: [['time', 'ASC']]
+      })
+    : memoryStore.rideRequests.filter((entry) => Number(entry.user_id) !== Number(userId) && SEARCHABLE_REQUEST_STATUSES.includes(entry.status) && !isUnmatchedRequestExpired(entry));
   const activeOutgoingRequesterIds = dbReady
     ? new Set((await ConnectionRequest.findAll({
         where: { status: { [Op.in]: ['sent', 'accepted'] } },
@@ -243,6 +286,7 @@ async function getMarketplaceRequests(userId, requestId) {
 
   const results = [];
   for (const candidate of candidates) {
+    if (!SEARCHABLE_REQUEST_STATUSES.includes(candidate.status) || isUnmatchedRequestExpired(candidate)) continue;
     if (activeOutgoingRequesterIds.has(Number(candidate.user_id))) continue;
     const existingConnection = dbReady
       ? await ConnectionRequest.findOne({ where: { ride_request_id: candidate.id, requester_id: Number(userId) } })
@@ -430,15 +474,22 @@ async function getRequestsForUser(userId) {
 async function findMatchingRide(request) {
   const dbReady = getDbReady();
   const memoryStore = getMemoryStore();
+  await expireUnmatchedRequests();
+  if (!request || request.status !== 'pending' || request.match_id || isUnmatchedRequestExpired(request)) return null;
 
   if (dbReady) {
-    const windowStart = new Date(request.time.getTime() - 30 * 60 * 1000);
-    const windowEnd = new Date(request.time.getTime() + 30 * 60 * 1000);
+    const requestedTime = new Date(request.time).getTime();
+    const windowStart = new Date(requestedTime - 30 * 60 * 1000);
+    const windowEnd = new Date(requestedTime + 30 * 60 * 1000);
 
     const candidates = await RideRequest.findAll({
       where: {
         status: 'pending',
-        time: { [Op.between]: [windowStart, windowEnd] }
+        time: {
+          [Op.between]: [windowStart, windowEnd],
+          [Op.gt]: new Date(Date.now() - REQUEST_EXPIRY_MS)
+        },
+        match_id: null
       },
       order: [['createdAt', 'ASC']]
     });
@@ -446,6 +497,7 @@ async function findMatchingRide(request) {
     const match = candidates.find((candidate) => {
       return (
         candidate.user_id !== request.user_id &&
+        !isUnmatchedRequestExpired(candidate) &&
         locationsMatch(request, candidate, 'origin', 'origin') &&
         locationsMatch(request, candidate, 'destination', 'destination')
       );
@@ -508,8 +560,9 @@ async function findMatchingRide(request) {
     return matchPayload;
   }
 
-  const windowStart = new Date(request.time.getTime() - 30 * 60 * 1000);
-  const windowEnd = new Date(request.time.getTime() + 30 * 60 * 1000);
+  const requestedTime = new Date(request.time).getTime();
+  const windowStart = new Date(requestedTime - 30 * 60 * 1000);
+  const windowEnd = new Date(requestedTime + 30 * 60 * 1000);
 
   const candidates = memoryStore.rideRequests.filter((candidate) => {
     const candidateTime = candidate.time instanceof Date ? candidate.time : new Date(candidate.time);
@@ -517,6 +570,8 @@ async function findMatchingRide(request) {
       locationsMatch(request, candidate, 'origin', 'origin') &&
       locationsMatch(request, candidate, 'destination', 'destination') &&
       candidate.status === 'pending' &&
+      !candidate.match_id &&
+      !isUnmatchedRequestExpired(candidate) &&
       candidate.user_id !== request.user_id &&
       candidateTime >= windowStart &&
       candidateTime <= windowEnd
@@ -601,6 +656,7 @@ const rideController = {
       const user = await ensureUser(userName, userEmail);
       const dbReady = getDbReady();
       const memoryStore = getMemoryStore();
+      await expireUnmatchedRequests();
 
       const request = await createRideRequestRecord({
         origin,
@@ -621,6 +677,8 @@ const rideController = {
         user_name: user.name,
         status: 'pending'
       });
+
+      await cancelOpenSearches(user.id, request.id);
 
       const requestPayload = normalizeRideParticipant(request);
       const serializedRequest = serializeRequest(request);
@@ -869,6 +927,7 @@ const rideController = {
     try {
       const userId = Number(req.query.userId);
       if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+      await expireUnmatchedRequests();
       const requests = await getRequestsForUser(userId);
       const visibleRequests = req.query.includeHistory === 'true'
         ? requests
@@ -1091,4 +1150,4 @@ const rideController = {
   }
 };
 
-module.exports = { rideController, setIO };
+module.exports = { rideController, setIO, expireUnmatchedRequests };
