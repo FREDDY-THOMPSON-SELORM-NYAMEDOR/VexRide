@@ -80,6 +80,14 @@ npm start
 - Socket.io is used for live ride/group notifications
 - Use Paystack test card `4084 4084 0840 8408` with any future expiry and CVV
 
+### Progressive web app
+
+Build the installable web export from `frontend` with `npm run export:web`; deploy the generated `dist` directory over HTTPS. The export includes the web manifest, install icons, offline page, and service worker. Vercel serves the SPA fallback for deep links and applies revalidation headers to the worker and manifest.
+
+The worker caches the app shell and static assets, and uses network-first caching for selected read-only ride, group, request, and chat endpoints. Private API caches are cleared when a user logs out or switches accounts. Deep links include `/request/:id`, `/group/:id`, and `/chat/:id` (add `?type=group` for a group chat).
+
+The worker can display and route Web Push payloads, but background push delivery is not yet connected to a server-side subscription provider. Production delivery requires a VAPID key pair, subscription persistence, and backend event integration; current live updates continue to use Socket.IO while the app is open.
+
 ## Running Locally
 
 Start backend and frontend in separate terminals:

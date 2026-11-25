@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { getJson, patchJson } from '../services/api';
 import { getStoredUser } from '../services/user';
@@ -52,6 +52,7 @@ export default function MyRequestsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [error, setError] = useState('');
+  const lastOpenedRequestId = useRef(null);
 
   const loadJoinedRides = useCallback(async (userId) => {
     if (!userId) return;
@@ -77,6 +78,16 @@ export default function MyRequestsScreen({ navigation, route }) {
     }).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [loadRequests]);
+
+  useEffect(() => {
+    const requestId = route?.params?.requestId;
+    if (!requestId || String(lastOpenedRequestId.current) === String(requestId)) return;
+    const linkedRequest = requests.find((request) => String(request._id || request.id) === String(requestId));
+    if (linkedRequest) {
+      lastOpenedRequestId.current = requestId;
+      setSelectedRequest(linkedRequest);
+    }
+  }, [requests, route?.params?.requestId]);
 
   useEffect(() => {
     const cleanUpdated = onSocket('requestUpdated', (updated) => {

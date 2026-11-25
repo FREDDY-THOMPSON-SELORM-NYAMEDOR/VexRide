@@ -18,7 +18,7 @@ export default function BottomNav({ navigation, activeRoute }) {
       className="w-full left-0 right-0 z-50 items-center justify-center px-4 pb-3 pt-1"
       style={
         Platform.OS === 'web'
-          ? { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 999 }
+          ? { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 999, paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }
           : { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 999 }
       }
     >
@@ -31,8 +31,11 @@ export default function BottomNav({ navigation, activeRoute }) {
           return (
             <TouchableOpacity
               key={item.name}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
               onPress={() => navigation.navigate(item.name)}
               activeOpacity={0.8}
+              style={{ minHeight: 48 }}
               className={`flex-1 items-center justify-center py-2 px-2 sm:px-4 rounded-full flex-row gap-1.5 transition-all ${
                 active
                   ? 'bg-[#00f2fe] border border-[#00f2fe] shadow-lg shadow-[#00f2fe]/40 scale-105'

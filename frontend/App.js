@@ -1,6 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
 import AppNavigator from './src/navigation/AppNavigator';
+import PwaExperience from './src/components/PwaExperience';
 import { joinUser } from './src/services/socket';
 import { getStoredUser } from './src/services/user';
 import { startLiveLocationTracking, stopLiveLocationTracking } from './src/services/liveLocation';
@@ -32,5 +33,10 @@ export default function App() {
     };
   }, []);
 
-  return <AppNavigator />;
+  return (
+    <>
+      <AppNavigator />
+      <PwaExperience />
+    </>
+  );
 }
