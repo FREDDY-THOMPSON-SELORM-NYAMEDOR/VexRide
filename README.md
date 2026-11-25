@@ -44,7 +44,7 @@ npm run dev
 
 ### API Endpoints
 
-- `POST /findRide` — create a request and automatically match a compatible pending ride
+- `POST /findRide` — publish a ride request for manual rider discovery and invitations
 - `GET /api/marketplace?userId=...&requestId=...` — find riders on similar routes
 - `POST /api/connections` and `PATCH /api/connections/:id` — request and accept a shared ride
 - `GET /api/requests` and `PATCH /api/requests/:id` — manage and finalize ride groups

@@ -66,18 +66,6 @@ export default function DiscoverRidersScreen({ navigation, route }) {
     });
   }), [loadMarketplace, user?.id]);
 
-  useEffect(() => onSocket('matchFound', async ({ requestId, matchId, counterParty, liveLocationState }) => {
-    if (Number(requestId) !== Number(request?.id || request?._id)) return;
-    await clearSearchSession();
-    navigation.navigate('MatchResult', {
-      match: { id: matchId, counterParty, liveLocationState },
-      request,
-      origin: originLabel(request),
-      destination: request?.destination,
-      time: request?.time
-    });
-  }), [navigation, request]);
-
   useEffect(() => {
     const applyResponse = (status) => (connection) => {
       if (Number(connection.requester_id) !== Number(user?.id)) return;
