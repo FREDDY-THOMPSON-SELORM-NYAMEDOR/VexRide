@@ -25,6 +25,31 @@ import { clearSearchSession } from '../services/searchSession';
 
 const Stack = createStackNavigator();
 const navigationRef = createNavigationContainerRef();
+const linking = {
+  prefixes: [
+    'https://vexride.app',
+    'https://www.vexride.app',
+    'vexride://'
+  ],
+  config: {
+    screens: {
+      Home: '',
+      Auth: 'auth',
+      FindRide: 'find',
+      DiscoverRiders: 'discover',
+      ConnectionRequests: 'connection-requests',
+      MatchResult: 'match/:matchId',
+      Chat: 'chat/:chatId',
+      Payment: 'payment',
+      RideDetails: 'ride/:rideId',
+      CreateGroup: 'create-group',
+      BrowseGroups: 'group/:groupId',
+      RideTracking: 'tracking/:matchId',
+      MyRequests: 'request/:requestId',
+      TrackingHub: 'tracking'
+    }
+  }
+};
 
 export default function AppNavigator() {
   const [initialRoute, setInitialRoute] = useState('Auth');
@@ -105,7 +130,7 @@ export default function AppNavigator() {
   if (!ready) return null;
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{

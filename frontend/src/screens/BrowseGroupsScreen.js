@@ -80,7 +80,14 @@ export default function BrowseGroupsScreen({ navigation, route }) {
               const isVerified = myMemberRecord?.status === 'verified';
 
               return (
-                <View key={group.id} className="bg-[#0b172a]/95 rounded-3xl p-5 mb-4 border border-[#00f2fe]/25 shadow-xl">
+                <View
+                  key={group.id}
+                  className="bg-[#0b172a]/95 rounded-3xl p-5 mb-4 border shadow-xl"
+                  style={{
+                    borderColor: String(group.id) === String(route?.params?.groupId) ? '#ff5e36' : '#00f2fe40',
+                    borderWidth: String(group.id) === String(route?.params?.groupId) ? 2 : 1
+                  }}
+                >
 
                   {/* Group Header */}
                   <View className="flex-row justify-between items-center mb-3 pb-3 border-b border-white/[0.08]">

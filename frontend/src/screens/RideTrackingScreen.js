@@ -18,6 +18,17 @@ export default function RideTrackingScreen({ navigation, route }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const targetMatchId = route?.params?.matchId;
+  const targetRide = targetMatchId
+    ? [...activeRides, ...completedRides].find((ride) => String(ride.id) === String(targetMatchId))
+    : null;
+  const mapRide = targetMatchId ? targetRide : activeRides[0];
+  const visibleActiveRides = targetMatchId
+    ? activeRides.filter((ride) => String(ride.id) === String(targetMatchId))
+    : activeRides;
+  const visibleCompletedRides = targetMatchId
+    ? completedRides.filter((ride) => String(ride.id) === String(targetMatchId))
+    : completedRides;
 
   useEffect(() => { (async () => { const user = await getStoredUser(); setCurrentUser(user); if (user) await loadRides(user.id); })() }, []);
   useEffect(() => {
@@ -106,9 +117,9 @@ export default function RideTrackingScreen({ navigation, route }) {
         </View>
 
         {/* Live Map Card */}
-        {activeRides[0]?.liveLocationState ? (
+        {mapRide?.liveLocationState ? (
           <View className="rounded-3xl overflow-hidden mb-5 border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]">
-            <LiveLocationMap liveLocationState={activeRides[0].liveLocationState} title="Live ride map" height={260} />
+            <LiveLocationMap liveLocationState={mapRide.liveLocationState} title="Live ride map" height={260} />
           </View>
         ) : (
           <View className="bg-[#0b172a]/95 rounded-3xl p-5 border border-[#00f2fe]/20 shadow-xl mb-5 flex-row items-center gap-3">
@@ -119,8 +130,15 @@ export default function RideTrackingScreen({ navigation, route }) {
           </View>
         )}
 
+        {targetMatchId && !targetRide ? (
+          <View className="bg-[#ff5e36]/10 border border-[#ff5e36]/35 rounded-2xl p-4 mb-4">
+            <Text className="text-[#ff9b83] font-bold text-sm">Ride #{targetMatchId} was not found in your rides.</Text>
+          </View>
+        ) : null}
+
         {/* Active Rides List */}
-        {activeRides.length === 0 ? (
+        {visibleActiveRides.length === 0 ? (
+          targetMatchId && targetRide ? null : (
           <View className="bg-[#0b172a]/95 rounded-3xl p-8 border border-white/[0.08] items-center my-4">
             <View className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/[0.1] items-center justify-center mb-3">
               <CarIcon size={24} color="#8eb4c6" />
@@ -128,8 +146,9 @@ export default function RideTrackingScreen({ navigation, route }) {
             <Text className="text-white text-base font-extrabold mb-1">No Active Confirmed Rides</Text>
             <Text className="text-[#8eb4c6] text-xs text-center">Match a ride from the search screen to track it live here.</Text>
           </View>
+          )
         ) : (
-          activeRides.map((ride) => {
+          visibleActiveRides.map((ride) => {
             const isUser1 = ride.user1_id === currentUser?.id;
             const userConfirmed = ride.status === 'confirmed' || (isUser1 ? ride.user1_confirmed : ride.user2_confirmed);
             const completedByUser = ride.match_type === 'group'
@@ -227,10 +246,10 @@ export default function RideTrackingScreen({ navigation, route }) {
           })
         )}
 
-        {completedRides.length ? (
+        {visibleCompletedRides.length ? (
           <View className="mt-5">
             <Text className="text-white text-base font-black mb-3">Completed rides</Text>
-            {completedRides.map((ride) => (
+            {visibleCompletedRides.map((ride) => (
               <TouchableOpacity
                 key={ride.id}
                 className="bg-[#0b172a]/75 rounded-2xl p-4 mb-3 border border-white/[0.1]"

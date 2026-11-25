@@ -10,10 +10,13 @@ import { logError } from '../services/errorHandling';
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
 
 export default function ChatScreen({ navigation, route }) {
-  const { matchId, rideRequestId, request, counterParty } = route.params || {};
+  const params = route.params || {};
+  const isGroupChat = Boolean(params.rideRequestId || (params.type === 'group' && params.chatId));
+  const rideRequestId = params.rideRequestId || (params.type === 'group' ? params.chatId : undefined);
+  const matchId = params.matchId || (!isGroupChat ? params.chatId : undefined);
+  const { request, counterParty } = params;
   const chatRoomId = rideRequestId || matchId;
   const chatRoomKey = getChatRoomId(matchId, rideRequestId);
-  const isGroupChat = Boolean(rideRequestId);
   const [currentUser, setCurrentUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
