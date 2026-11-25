@@ -74,7 +74,6 @@ export default function PwaExperience() {
       {!online ? (
         <View
           accessibilityLiveRegion="polite"
-          pointerEvents="none"
           style={{
             position: 'fixed',
             top: 'max(12px, env(safe-area-inset-top))',
@@ -85,10 +84,26 @@ export default function PwaExperience() {
           }}
         >
           <View style={{ width: '100%', maxWidth: 480, padding: 16, borderRadius: 20, backgroundColor: '#0b172a', borderWidth: 1, borderColor: '#ff5e3680' }}>
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>You are currently offline</Text>
-            <Text style={{ color: '#c9e5f4', fontSize: 13, lineHeight: 19, marginTop: 4 }}>
-              Previously opened pages and cached conversations may still be available.
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>You are offline</Text>
+                <Text style={{ color: '#c9e5f4', fontSize: 13, lineHeight: 19, marginTop: 4 }}>
+                  VexRide will reconnect automatically.
+                </Text>
+              </View>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Retry connection"
+                onPress={() => window.location.reload()}
+                style={{ minWidth: 76, minHeight: 44, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ff5e36' }}
+              >
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 10 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff5e36' }} />
+              <Text style={{ color: '#ff9b83', fontSize: 12, fontWeight: '700' }}>Connection unavailable</Text>
+            </View>
           </View>
         </View>
       ) : null}
@@ -98,7 +113,7 @@ export default function PwaExperience() {
             <Text style={{ color: '#ff5e36', fontSize: 12, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' }}>VexRide</Text>
             <Text style={{ color: '#fff', fontSize: 26, fontWeight: '900', marginTop: 10 }}>Install VexRide</Text>
             <Text style={{ color: installError ? '#ff8c73' : '#c9e5f4', fontSize: 15, lineHeight: 22, marginTop: 8 }}>
-              {installError || 'Access VexRide directly from your home screen.'}
+              {installError || 'Access VexRide directly from your home screen and stay connected on the go.'}
             </Text>
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
               <TouchableOpacity
@@ -106,7 +121,7 @@ export default function PwaExperience() {
                 onPress={dismissInstallPrompt}
                 style={{ flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#ffffff30' }}
               >
-                <Text style={{ color: '#c9e5f4', fontWeight: '800' }}>Not Now</Text>
+                <Text style={{ color: '#c9e5f4', fontWeight: '800' }}>Later</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 accessibilityRole="button"

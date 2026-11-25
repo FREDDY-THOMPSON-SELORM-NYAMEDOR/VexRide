@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, Platform } from 'react-native';
-import { HomeIcon, SearchIcon, TrackingIcon, GroupsIcon } from './Icons';
+import { HomeIcon, SearchIcon, TrackingIcon, GroupsIcon, ChatIcon } from './Icons';
 import { useUnreadCount } from '../services/chatBadge';
 
 const navItems = [
   { name: 'Home', label: 'Home', IconComponent: HomeIcon },
   { name: 'FindRide', label: 'Search', IconComponent: SearchIcon },
+  { name: 'Messages', label: 'Messages', IconComponent: ChatIcon },
   { name: 'TrackingHub', label: 'Tracking', IconComponent: TrackingIcon },
   { name: 'BrowseGroups', label: 'Groups', IconComponent: GroupsIcon }
 ];
@@ -24,9 +25,13 @@ export default function BottomNav({ navigation, activeRoute }) {
     >
       <View className="w-full max-w-md bg-[#07162b]/95 border border-[#00f2fe]/40 rounded-full px-2 py-2 flex-row justify-around items-center shadow-2xl shadow-[#00f2fe]/30 backdrop-blur-2xl">
         {navItems.map((item) => {
-          const active = item.name === 'TrackingHub'
-            ? ['TrackingHub', 'MyRequests', 'RideTracking'].includes(activeRoute)
-            : activeRoute === item.name;
+          const active = item.name === 'BrowseGroups'
+            ? ['BrowseGroups', 'Community'].includes(activeRoute)
+            : item.name === 'FindRide'
+              ? ['FindRide', 'CreateRequest'].includes(activeRoute)
+              : item.name === 'TrackingHub'
+                ? ['TrackingHub', 'MyRequests', 'RideTracking'].includes(activeRoute)
+                : activeRoute === item.name;
           const { IconComponent } = item;
           return (
             <TouchableOpacity

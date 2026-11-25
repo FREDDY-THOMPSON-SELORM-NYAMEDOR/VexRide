@@ -47,9 +47,10 @@ Clean entry point that:
 - `getUserById()` - Fetch user by ID
 
 #### rideController.js
-- `findRide()` - Search and match rides
-- `bookRide()` - Confirm and book a matched ride
-- Internal helpers: `createRideRequestRecord()`, `findMatchingRide()`
+- `findRide()` - Create a request and automatically match a compatible pending ride
+- Marketplace and connection handlers - Discover riders, request to join, and accept or decline
+- Group request handlers - Finalize groups, confirm riders, and share live locations
+- Internal helpers: `createRideRequestRecord()`, `findMatchingRide()`, `getMarketplaceRequests()`
 
 #### matchController.js
 - `confirmMatch()` - Confirm a matched ride
@@ -85,29 +86,53 @@ Shared utilities:
 ## Routes
 
 ### User
+- `POST /auth/signup` - Create an account
+- `POST /auth/login` - Sign in
+- `POST /auth/logout` - Sign out
 - `POST /user/getOrCreate` - Create or get user
 - `GET /user/:userId` - Get user details
 
-### Rides
-- `POST /findRide` - Find and match rides
-- `POST /bookRide` - Book a matched ride
+### Ride discovery and groups
+- `POST /findRide` - Create a request and automatically match a pending rider within 2.5 km and 30 minutes
+- `GET /api/marketplace?userId=...&requestId=...` - Find compatible ride requests
+- `POST /api/connections` - Ask to join a ride
+- `GET /api/connections?userId=...` - List sent and received requests
+- `PATCH /api/connections/:id` - Accept, decline, or cancel a connection
+- `POST /cancelRide` - Cancel an open ride request
+- `GET /api/requests?userId=...` - List a rider's requests
+- `GET /api/requests/:id` - Get a ride request
+- `PATCH /api/requests/:id` - Update a request or finalize a group
+- `POST /api/requests/:id/confirm` - Confirm a finalized group
+- `GET /api/requests/:id/live?userId=...` - Get group live locations
+- `POST /location/update` - Update a rider's current location
+- `GET /match/:matchId/live` - Get pair-match live locations
 
-### Matches
-- `POST /confirmMatch` - Confirm a match
+### Matches and chat
+- `POST /confirmMatch` - Confirm a pair match
+- `POST /confirmRideCompleted` - Confirm ride completion
+- `POST /updatePaymentStatus` - Update match payment status
+- `GET /activeRides/:userId` - List confirmed and completed rides
+- `GET /match/:matchId/chat` - Load pair-chat messages
+- `GET /api/requests/:id/chat?userId=...` - Load group-chat messages
+- `PATCH /messages/:messageId/seen` - Mark a message as seen
+- `GET /messages/unread/:userId` - Get unread message counts
 
 ### Payments
 - `POST /processPayment` - Initialize payment
+- `POST /transaction/initialize` - Initialize payment (alias)
 - `GET /verifyPayment/:reference` - Verify payment
-- `GET /transaction/initialize` - Initialize transaction
-- `GET /transaction/verify/:reference` - Verify transaction
+- `GET /transaction/verify/:reference` - Verify payment (alias)
 - `GET /paystack/callback` - Payment callback
 
 ### Groups
-- `POST /createGroup` - Create group
+- `POST /createGroup` - Create a group
 - `GET /browseGroups` - List groups
-- `POST /joinGroup` - Join group
-- `POST /bookGroupRide` - Book group ride
+- `POST /joinGroup` - Join a group
+- `POST /bookGroupRide` - Book a group ride
 
+- `GET /places/search?q=...`, `GET /places/reverse?lat=...&lon=...`, and `GET /places/ip` provide location lookup.
+- `GET /health` reports server health.
+- `POST /reset-app-data` is registered only outside production.
 ## Running the Server
 
 ```bash

@@ -15,6 +15,7 @@ import BrowseGroupsScreen from '../screens/BrowseGroupsScreen';
 import RideTrackingScreen from '../screens/RideTrackingScreen';
 import MyRequestsScreen from '../screens/MyRequestsScreen';
 import TrackingHubScreen from '../screens/TrackingHubScreen';
+import MessagesScreen from '../screens/MessagesScreen';
 import AuthScreen from '../screens/AuthScreen';
 import { getStoredUser } from '../services/user';
 import { getJson } from '../services/api';
@@ -36,7 +37,10 @@ const linking = {
       Home: '',
       Auth: 'auth',
       FindRide: 'find',
+      CreateRequest: 'create-request',
       DiscoverRiders: 'discover',
+      Community: 'community',
+      Messages: 'messages',
       ConnectionRequests: 'connection-requests',
       MatchResult: 'match/:matchId',
       Chat: 'chat/:chatId',
@@ -142,7 +146,10 @@ export default function AppNavigator() {
         <Stack.Screen name="Auth" component={AuthScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="FindRide" component={FindRideScreen} />
+        <Stack.Screen name="CreateRequest" component={FindRideScreen} />
         <Stack.Screen name="DiscoverRiders" component={DiscoverRidersScreen} />
+        <Stack.Screen name="Community" component={BrowseGroupsScreen} />
+        <Stack.Screen name="Messages" component={MessagesScreen} />
         <Stack.Screen name="ConnectionRequests" component={ConnectionRequestsScreen} />
         <Stack.Screen name="MatchResult" component={MatchResultScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />

@@ -20,7 +20,7 @@ function originLabel(request) {
 }
 
 export default function DiscoverRidersScreen({ navigation, route }) {
-  const request = route?.params?.request;
+  const [request, setRequest] = useState(route?.params?.request || null);
   const [riders, setRiders] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,11 +29,24 @@ export default function DiscoverRidersScreen({ navigation, route }) {
 
   const loadMarketplace = useCallback(async () => {
     const storedUser = await getStoredUser();
-    if (!storedUser?.id || !request?._id) return;
+    if (!storedUser?.id) return;
     setUser(storedUser);
-    const result = await getJson(`/api/marketplace?userId=${storedUser.id}&requestId=${request._id}`);
+    let activeRequest = request;
+    if (!activeRequest?._id && !activeRequest?.id) {
+      const requestResult = await getJson(`/api/requests?userId=${storedUser.id}`);
+      activeRequest = (requestResult.requests || []).find((entry) =>
+        ['pending', 'connection_requested', 'partially_grouped'].includes(entry.status)
+      );
+      if (activeRequest) setRequest(activeRequest);
+    }
+    const requestId = activeRequest?._id || activeRequest?.id;
+    if (!requestId) {
+      setRiders([]);
+      return;
+    }
+    const result = await getJson(`/api/marketplace?userId=${storedUser.id}&requestId=${requestId}`);
     setRiders(result.requests || []);
-  }, [request?._id]);
+  }, [request?._id, request?.id]);
 
   useEffect(() => {
     let active = true;
@@ -52,6 +65,18 @@ export default function DiscoverRidersScreen({ navigation, route }) {
       logError('Refresh marketplace', loadError);
     });
   }), [loadMarketplace, user?.id]);
+
+  useEffect(() => onSocket('matchFound', async ({ requestId, matchId, counterParty, liveLocationState }) => {
+    if (Number(requestId) !== Number(request?.id || request?._id)) return;
+    await clearSearchSession();
+    navigation.navigate('MatchResult', {
+      match: { id: matchId, counterParty, liveLocationState },
+      request,
+      origin: originLabel(request),
+      destination: request?.destination,
+      time: request?.time
+    });
+  }), [navigation, request]);
 
   useEffect(() => {
     const applyResponse = (status) => (connection) => {
@@ -92,8 +117,8 @@ export default function DiscoverRidersScreen({ navigation, route }) {
             <SearchIcon size={20} color="#00f2fe" />
           </View>
           <View className="flex-1">
-            <Text className="text-2xl font-black text-white">Find people for your ride</Text>
-            <Text className="text-[#8eb4c6] text-xs mt-1">Review these rides and ask to join one.</Text>
+            <Text className="text-2xl font-black text-white">Your ride match</Text>
+            <Text className="text-[#8eb4c6] text-xs mt-1">See who’s heading your way and ask to ride together.</Text>
           </View>
         </View>
 

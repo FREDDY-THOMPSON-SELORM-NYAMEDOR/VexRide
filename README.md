@@ -44,10 +44,13 @@ npm run dev
 
 ### API Endpoints
 
-- `POST /findRide` — create a ride request and attempt a match
+- `POST /findRide` — create a request and automatically match a compatible pending ride
+- `GET /api/marketplace?userId=...&requestId=...` — find riders on similar routes
+- `POST /api/connections` and `PATCH /api/connections/:id` — request and accept a shared ride
+- `GET /api/requests` and `PATCH /api/requests/:id` — manage and finalize ride groups
+- `POST /confirmMatch` and `GET /activeRides/:userId` — confirm and view matched rides
 - `POST /processPayment` — initialize Paystack payment for a match
 - `GET /verifyPayment/:reference` — verify Paystack transaction status
-- `POST /bookRide` — mock ride booking for a confirmed match
 - `POST /createGroup` — create a live group
 - `GET /browseGroups` — list groups
 - `POST /joinGroup` — join a group
@@ -82,11 +85,11 @@ npm start
 
 ### Progressive web app
 
-Build the installable web export from `frontend` with `npm run export:web`; deploy the generated `dist` directory over HTTPS. The export includes the web manifest, install icons, offline page, and service worker. Vercel serves the SPA fallback for deep links and applies revalidation headers to the worker and manifest.
+Build the installable web export from `frontend` with `npm run export:web`; deploy the generated `dist` directory over HTTPS. The export includes the web manifest, install icons, offline page, and service worker. Vercel serves the SPA fallback for deep links and applies revalidation headers to the worker and manifest. Supported Chromium browsers can expose Create Request, Discover Riders, Community (the existing group-ride browser), and Messages (ride conversations) app shortcuts. The community shortcut opens group rides; VexRide does not currently have a social feed.
 
-The worker caches the app shell and static assets, and uses network-first caching for selected read-only ride, group, request, and chat endpoints. Private API caches are cleared when a user logs out or switches accounts. Deep links include `/request/:id`, `/group/:id`, and `/chat/:id` (add `?type=group` for a group chat).
+The worker caches the app shell, static assets, fonts, and icons, and uses network-first caching for selected read-only ride, group, request, and chat endpoints. Private API caches are cleared when a user logs out or switches accounts. Deep links include `/request/:id`, `/group/:id`, and `/chat/:id` (add `?type=group` for a group chat).
 
-The worker can display and route Web Push payloads, but background push delivery is not yet connected to a server-side subscription provider. Production delivery requires a VAPID key pair, subscription persistence, and backend event integration; current live updates continue to use Socket.IO while the app is open.
+The worker can display and route Web Push payloads, but background push delivery is not yet connected to a server-side subscription provider. Production delivery requires a VAPID key pair, subscription persistence, and backend event integration; current live updates continue to use Socket.IO while the app is open. Background write queuing and periodic background refresh are not enabled: browser support is inconsistent, and chat messages currently use Socket.IO rather than an idempotent HTTP outbox.
 
 ## Running Locally
 
