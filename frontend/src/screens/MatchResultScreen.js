@@ -1,19 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { getJson, postJson } from '../services/api';
 import { onSocket } from '../services/socket';
 import ScreenLayout from '../components/ScreenLayout';
 import LiveLocationMap from '../components/LiveLocationMap';
 import { ZapIcon, PinIcon, FlagIcon, ClockIcon, ChatIcon, CheckIcon } from '../components/Icons';
 import { getStoredUser } from '../services/user';
-import { clearSearchSession, saveSearchSession } from '../services/searchSession';
+import { clearSearchSession } from '../services/searchSession';
 import ChatUnreadBadge from '../components/ChatUnreadBadge';
 import { friendlyError, logError } from '../services/errorHandling';
 import { startLiveLocationTracking } from '../services/liveLocation';
 
 const heroImage = require('../../assets/images/vex_map_bg_1784946439656.jpg');
-const SEARCH_TIMEOUT_SECONDS = 120;
-
 function locationLabel(value) {
   if (!value) return '';
   if (typeof value === 'string') return value;
@@ -24,11 +22,13 @@ function locationLabel(value) {
 export default function MatchResultScreen({ navigation, route }) {
   const { origin, destination, time, match, matchId, request, groupRequestId } = route.params || {};
   const isGroupMatch = Boolean(groupRequestId);
-  const initialMatch = match || (isGroupMatch && (matchId || request?.matchId) ? { id: matchId || request.matchId, groupRequestId } : isGroupMatch ? { groupRequestId } : null);
+  const initialMatch = match
+    || (matchId ? { id: matchId, ...(isGroupMatch ? { groupRequestId } : {}) } : null)
+    || (isGroupMatch ? { groupRequestId } : null);
   const [currentMatch, setCurrentMatch] = useState(initialMatch);
   const [status, setStatus] = useState(isGroupMatch
     ? (request?.status === 'matched' ? 'Group confirmed' : 'Awaiting rider confirmations')
-    : match ? 'Match ready' : 'Searching for a rider nearby...');
+    : initialMatch ? 'Ride match' : 'No match selected');
   const [activeRequest, setActiveRequest] = useState(request);
   const [counterParty, setCounterParty] = useState(match?.counterParty || null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -36,48 +36,9 @@ export default function MatchResultScreen({ navigation, route }) {
   const [groupConfirming, setGroupConfirming] = useState(false);
   const [groupConfirmed, setGroupConfirmed] = useState(false);
   const [confirmationNote, setConfirmationNote] = useState('');
-  const [searchTimeout, setSearchTimeout] = useState(false);
-  const [secondsRemaining, setSecondsRemaining] = useState(SEARCH_TIMEOUT_SECONDS);
-  const [searching, setSearching] = useState(!match && !isGroupMatch);
-  const timeoutRef = useRef(null);
-  const countdownRef = useRef(null);
-
-  function clearSearchTimers() {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    timeoutRef.current = null;
-    countdownRef.current = null;
-  }
-
-  function startSearchTimers() {
-    clearSearchTimers();
-    setSearchTimeout(false);
-    setSearching(true);
-    setSecondsRemaining(SEARCH_TIMEOUT_SECONDS);
-    countdownRef.current = setInterval(() => {
-      setSecondsRemaining((previous) => Math.max(previous - 1, 0));
-    }, 1000);
-    timeoutRef.current = setTimeout(() => {
-      clearSearchTimers();
-      setSearching(false);
-      setSearchTimeout(true);
-      setStatus('Search timed out');
-    }, SEARCH_TIMEOUT_SECONDS * 1000);
-  }
-
   useEffect(() => {
     (async () => setCurrentUser(await getStoredUser()))();
 
-    const cleanup = onSocket('matchFound', ({ matchId, request, counterParty, liveLocationState }) => {
-      setCurrentMatch({ id: matchId, liveLocationState });
-      setActiveRequest(request);
-      setCounterParty(counterParty || null);
-      setStatus('Live match found!');
-      setSearching(false);
-      setSearchTimeout(false);
-      clearSearchTimers();
-      clearSearchSession();
-    });
     const cleanRequestUpdated = onSocket('requestUpdated', (updatedRequest) => {
       if (!isGroupMatch || String(updatedRequest?._id || updatedRequest?.id) !== String(groupRequestId)) return;
       setActiveRequest((previous) => ({ ...previous, ...updatedRequest }));
@@ -87,15 +48,11 @@ export default function MatchResultScreen({ navigation, route }) {
       }
     });
     if (isGroupMatch) {
-      clearSearchTimers();
-      setSearching(false);
       setStatus('Group match found');
       clearSearchSession();
-    } else if (!match) startSearchTimers();
+    }
     return () => {
-      cleanup();
       cleanRequestUpdated();
-      clearSearchTimers();
     };
   }, []);
 
@@ -135,55 +92,6 @@ export default function MatchResultScreen({ navigation, route }) {
   }, [currentMatch?.id, isGroupMatch]);
 
   const liveLocationState = currentMatch?.liveLocationState;
-
-  async function handleSearchAgain() {
-    try {
-      startSearchTimers();
-      const search = {
-        origin: origin?.trim(),
-        destination: destination?.trim(),
-        time: time?.trim(),
-        active: true,
-        startedAt: Date.now()
-      };
-      await saveSearchSession(search);
-      const result = await postJson('/findRide', {
-        origin: origin?.trim(),
-        destination: destination?.trim(),
-        time: time?.trim(),
-        userName: currentUser?.name,
-        userEmail: currentUser?.email
-      });
-      setActiveRequest(result.request);
-      await saveSearchSession({ ...search, requestId: result.request?.id });
-      if (result.match) {
-        setCurrentMatch(result.match);
-        setCounterParty(result.match.counterParty || null);
-        setStatus('Match ready');
-        setSearching(false);
-        clearSearchTimers();
-        await clearSearchSession();
-      }
-    } catch (error) {
-      clearSearchTimers();
-      setSearching(false);
-      logError('Retry match search', error);
-      Alert.alert('Search failed', friendlyError(error, 'Unable to search for a ride. Please try again.'));
-    }
-  }
-
-  async function handleCancelSearch() {
-    clearSearchTimers();
-    if (activeRequest?.id && currentUser?.id) {
-      try {
-        await postJson('/cancelRide', { requestId: activeRequest.id, userId: currentUser.id });
-      } catch (error) {
-        logError('Cancel match search', error);
-      }
-    }
-    await clearSearchSession();
-    navigation.navigate('FindRide');
-  }
 
   async function handleConfirmRide() {
     if (!currentMatch?.id) return;
@@ -235,37 +143,6 @@ export default function MatchResultScreen({ navigation, route }) {
 
   return (
     <ScreenLayout navigation={navigation} route={route} bgImage={heroImage}>
-      <Modal
-        visible={searchTimeout}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSearchTimeout(false)}
-      >
-        <View className="flex-1 bg-[#050c1a]/80 items-center justify-center px-6">
-          <View className="w-full max-w-sm bg-[#0b172a] border border-[#ff5e36]/50 rounded-3xl p-6 shadow-2xl">
-            <Text className="text-white text-lg font-black text-center mb-2">Still looking</Text>
-            <Text className="text-[#c9e5f4] text-sm leading-5 text-center mb-5">
-              No match was found within 2 minutes. Please try searching again.
-            </Text>
-            <Text className="text-[#8eb4c6] text-xs text-center mb-5">
-              You can also try a wider radius or a different departure time.
-            </Text>
-            <TouchableOpacity
-              className="bg-[#ff5e36] border border-[#ff5e36]/60 py-3.5 rounded-2xl items-center flex-row justify-center gap-2"
-              onPress={handleSearchAgain}
-            >
-              <ZapIcon size={17} color="#ffffff" />
-              <Text className="text-white font-black text-sm">Search Again</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="mt-3 border border-white/[0.15] bg-white/[0.04] py-3.5 rounded-2xl items-center"
-              onPress={() => setSearchTimeout(false)}
-            >
-              <Text className="text-[#8eb4c6] font-extrabold text-sm">Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
       <View className="w-full max-w-md self-center py-2">
 
         {/* Screen Title */}
@@ -274,11 +151,11 @@ export default function MatchResultScreen({ navigation, route }) {
             <View className="w-9 h-9 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/40 items-center justify-center">
               <ZapIcon size={18} color="#00f2fe" />
             </View>
-            <Text className="text-xl font-black text-white">{isGroupMatch ? 'Group Ride' : 'Ride Match'}</Text>
+            <Text className="text-xl font-black text-white">{isGroupMatch ? 'Group Ride' : 'Ride Details'}</Text>
           </View>
             <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 px-3 py-1 rounded-full">
             <Text className="text-[#00f2fe] font-bold text-[10px] uppercase">
-              {isGroupMatch ? `Group #${groupRequestId}` : currentMatch ? `Match #${currentMatch.id}` : 'Searching'}
+              {isGroupMatch ? `Group #${groupRequestId}` : currentMatch ? `Match #${currentMatch.id}` : 'No match selected'}
             </Text>
           </View>
         </View>
@@ -324,19 +201,11 @@ export default function MatchResultScreen({ navigation, route }) {
 
         {/* Live Status Info Banner */}
         <View className="bg-[#00f2fe]/10 border border-[#00f2fe]/30 rounded-2xl p-3.5 mb-5 items-center">
-          {searching ? (
-            <View className="flex-row items-center gap-2 mb-1">
-              <ActivityIndicator size="small" color="#ff5e36" />
-              <Text className="text-[#ffb09b] text-xs font-bold">
-                Searching... {Math.floor(secondsRemaining / 60)}:{String(secondsRemaining % 60).padStart(2, '0')} left
-              </Text>
-            </View>
-          ) : null}
           <Text className="text-[#00f2fe] text-xs font-black tracking-wide text-center">{status}</Text>
           <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">
             {isGroupMatch
               ? (activeRequest?.status === 'matched' ? 'All riders confirmed. Ride locations and pickup order update as riders share GPS.' : 'The ride owner has closed the search. Every rider must confirm before tracking starts.')
-              : 'Match stays pending until both riders confirm. Chat first, then confirm when ready.'}
+              : 'Ride requests stay open for discovery. Riders connect by sending and accepting requests.'}
           </Text>
           {liveLocationState?.pickupSummary ? (
             <Text className="text-[#ccebf5] text-xs text-center mt-1 leading-4">{liveLocationState.pickupSummary}</Text>
@@ -383,13 +252,6 @@ export default function MatchResultScreen({ navigation, route }) {
             <ChatUnreadBadge />
           </TouchableOpacity>
         ) : null}
-
-        {!isGroupMatch ? <TouchableOpacity
-          className="mt-3 border border-[#ff5e36]/40 bg-[#ff5e36]/10 py-3 rounded-2xl items-center"
-          onPress={handleCancelSearch}
-        >
-          <Text className="text-[#ff9b83] font-extrabold text-sm">Cancel Search</Text>
-        </TouchableOpacity> : null}
 
         {confirmationNote ? (
           <View className="mt-3 bg-[#050e1d] border border-white/[0.08] rounded-2xl px-4 py-3">

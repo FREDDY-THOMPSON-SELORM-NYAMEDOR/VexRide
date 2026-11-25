@@ -54,7 +54,7 @@ beforeEach(() => {
   setIO(null);
 });
 
-test('a new ride pairs with an existing rider on the same route and notifies both', async () => {
+test('riders must explicitly request and accept a connection before joining', async () => {
   const notifications = [];
   setIO({
     to(room) {
@@ -68,17 +68,37 @@ test('a new ride pairs with an existing rider on the same route and notifies bot
 
   const secondRide = await findRide(rideBody('Kojo', 'kojo@example.com', 'Madina', 5.671, -0.171, departure));
   const store = getMemoryStore();
+  const firstUserId = firstRide.request.userId;
+  const secondUserId = secondRide.request.userId;
+  assert.equal(secondRide.match, null);
+  assert.equal(firstRide.request.status, 'pending');
+  assert.equal(secondRide.request.status, 'pending');
+  assert.equal(store.matches.length, 0);
+  assert.equal(notifications.some((event) => event.event === 'matchFound'), false);
 
-  assert.ok(secondRide.match);
-  assert.equal(secondRide.match.matchId, secondRide.match.id);
-  assert.equal(secondRide.request.status, 'matched');
-  assert.equal(store.rideRequests[0].status, 'matched');
-  assert.equal(store.rideRequests[1].status, 'matched');
-  assert.equal(store.matches.length, 1);
-  assert.deepEqual(
-    notifications.filter((event) => event.event === 'matchFound').map((event) => event.room).sort(),
-    ['user:1', 'user:2']
-  );
+  const marketplace = createResponse();
+  await rideController.marketplace({
+    query: { userId: String(firstUserId), requestId: String(firstRide.request.id) }
+  }, marketplace);
+  assert.deepEqual(marketplace.payload.requests.map((request) => request.id), [secondRide.request.id]);
+
+  const invitation = createResponse();
+  await rideController.sendConnectionRequest({
+    body: { requestId: secondRide.request.id, userId: firstUserId }
+  }, invitation);
+  assert.equal(invitation.statusCode, 201);
+  assert.equal(store.rideRequests[1].status, 'connection_requested');
+
+  const accepted = createResponse();
+  await rideController.updateConnectionRequest({
+    params: { id: invitation.payload.connection.id },
+    body: { userId: secondUserId, status: 'accepted' }
+  }, accepted);
+  assert.equal(accepted.payload.success, true);
+  assert.equal(store.rideRequests[1].status, 'partially_grouped');
+  assert.equal(Boolean(store.rideRequests[1].match_id), false);
+  assert.equal(store.matches.length, 0);
+  assert.equal(notifications.some((event) => event.event === 'matchFound'), false);
 });
 
 test('marketplace invitations can be accepted and finalized by every group rider', async () => {

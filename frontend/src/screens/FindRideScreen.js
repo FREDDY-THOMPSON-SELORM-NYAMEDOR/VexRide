@@ -222,19 +222,7 @@ export default function FindRideScreen({ navigation, route }) {
         userEmail: APP_USER.email
       });
       await saveSearchSession({ ...search, requestId: data.request?.id });
-      if (data.match) {
-        await clearSearchSession();
-        setActiveSearch(false);
-        navigation.navigate('MatchResult', {
-          match: data.match,
-          request: data.request,
-          origin: pickup,
-          destination: dropoff,
-          time: time.trim()
-        });
-      } else {
-        navigation.navigate('DiscoverRiders', { request: data.request });
-      }
+      navigation.navigate('DiscoverRiders', { request: data.request });
     } catch (err) { logError('Find ride', err); setError(friendlyError(err, 'Could not find a ride. Please try again.')); } finally { setLoading(false); }
   }
 

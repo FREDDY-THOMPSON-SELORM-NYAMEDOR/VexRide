@@ -47,10 +47,10 @@ Clean entry point that:
 - `getUserById()` - Fetch user by ID
 
 #### rideController.js
-- `findRide()` - Create a request and automatically match a compatible pending ride
+- `findRide()` - Publish a ride request for manual discovery and invitations
 - Marketplace and connection handlers - Discover riders, request to join, and accept or decline
 - Group request handlers - Finalize groups, confirm riders, and share live locations
-- Internal helpers: `createRideRequestRecord()`, `findMatchingRide()`, `getMarketplaceRequests()`
+- Internal helpers: `createRideRequestRecord()`, `getMarketplaceRequests()`
 
 #### matchController.js
 - `confirmMatch()` - Confirm a matched ride
@@ -93,7 +93,7 @@ Shared utilities:
 - `GET /user/:userId` - Get user details
 
 ### Ride discovery and groups
-- `POST /findRide` - Create a request and automatically match a pending rider within 2.5 km and 30 minutes
+- `POST /findRide` - Publish a ride request for others to discover; no automatic pairing occurs
 - `GET /api/marketplace?userId=...&requestId=...` - Find compatible ride requests
 - `POST /api/connections` - Ask to join a ride
 - `GET /api/connections?userId=...` - List sent and received requests

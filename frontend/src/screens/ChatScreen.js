@@ -137,11 +137,6 @@ export default function ChatScreen({ navigation, route }) {
       if (String(incomingRoomId) === String(chatRoomId) && String(userId) !== String(currentUser?.id)) setPartnerTyping(false);
     });
 
-    const cleanMatch = onSocket('matchFound', ({ matchId: incomingMatchId, request: incomingRequest, counterParty: incomingCounterParty }) => {
-      if (String(incomingMatchId) !== String(matchId)) return;
-      setMatchDetails({ matchId: incomingMatchId, request: incomingRequest, counterParty: incomingCounterParty });
-    });
-
     return () => {
       active = false;
       if (isActiveChatMatch(chatRoomKey)) setActiveChatMatchId(null);
@@ -150,7 +145,6 @@ export default function ChatScreen({ navigation, route }) {
       cleanSeen();
       cleanTypingStart();
       cleanTypingStop();
-      cleanMatch();
       if (typingTimer.current) clearTimeout(typingTimer.current);
       sendTypingStop(matchId, rideRequestId);
     };

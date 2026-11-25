@@ -47,7 +47,6 @@ export default function MyRequestsScreen({ navigation, route }) {
   const [joinedRides, setJoinedRides] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [previousVisible, setPreviousVisible] = useState(false);
-  const [partners, setPartners] = useState({});
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
@@ -103,20 +102,13 @@ export default function MyRequestsScreen({ navigation, route }) {
         ? current
         : [created, ...current]);
     });
-    const cleanMatched = onSocket('matchFound', ({ requestId, matchId, partnerInfo, origin, destination }) => {
-      if (!requestId) return;
-      setPartners((current) => ({ ...current, [requestId]: partnerInfo }));
-      setRequests((current) => current.map((request) => Number(request._id) === Number(requestId)
-        ? { ...request, status: 'matched', matchId, origin: origin || request.origin, destination: destination || request.destination }
-        : request));
-    });
     const cleanGroupMatched = onSocket('groupMatchFound', ({ rideRequestId, request }) => {
       if (!rideRequestId) return;
       setJoinedRides((current) => current.map((connection) => Number(connection.ride_request_id) === Number(rideRequestId)
         ? { ...connection, rideRequest: { ...connection.rideRequest, ...request } }
         : connection));
     });
-    return () => { cleanUpdated(); cleanCreated(); cleanMatched(); cleanGroupMatched(); };
+    return () => { cleanUpdated(); cleanCreated(); cleanGroupMatched(); };
   }, []);
 
   const visibleRequests = requests.filter((request) => activeStatuses.includes(request.status));
@@ -227,7 +219,7 @@ export default function MyRequestsScreen({ navigation, route }) {
               <View className="mt-5 space-y-3">
                 <TouchableOpacity
                   className="bg-[#00f2fe] rounded-2xl py-3.5 items-center"
-                  onPress={() => { setSelectedRequest(null); navigation.navigate('Chat', { rideRequestId: selectedRequest._id, request: selectedRequest, counterParty: partners[selectedRequest._id] || null }); }}
+                  onPress={() => { setSelectedRequest(null); navigation.navigate('Chat', { rideRequestId: selectedRequest._id, request: selectedRequest }); }}
                 >
                   <Text className="text-[#061426] font-black">Open group chat</Text>
                 </TouchableOpacity>

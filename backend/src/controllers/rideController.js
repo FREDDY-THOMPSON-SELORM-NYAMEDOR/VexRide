@@ -4,7 +4,6 @@ const { buildLiveMatchState } = require('../utils/liveLocation');
 const { Op } = require('sequelize');
 
 let io;
-const LOCATION_MATCH_RADIUS_METERS = 2500;
 const REQUEST_EXPIRY_MS = 60 * 60 * 1000;
 const SEARCHABLE_REQUEST_STATUSES = ['pending', 'connection_requested', 'partially_grouped'];
 
@@ -365,16 +364,6 @@ async function createGroupMatch(request, connections) {
   return match;
 }
 
-function locationsMatch(request, candidate, prefix, label) {
-  const requestLatitude = request[`${prefix}_latitude`];
-  const requestLongitude = request[`${prefix}_longitude`];
-  const candidateLatitude = candidate[`${prefix}_latitude`];
-  const candidateLongitude = candidate[`${prefix}_longitude`];
-  const coordinateDistance = distanceMeters(requestLatitude, requestLongitude, candidateLatitude, candidateLongitude);
-  if (coordinateDistance <= LOCATION_MATCH_RADIUS_METERS) return true;
-  return request[label]?.trim().toLowerCase() === candidate[label]?.trim().toLowerCase();
-}
-
 async function getUserRecord(userId) {
   const dbReady = getDbReady();
   const memoryStore = getMemoryStore();
@@ -471,182 +460,6 @@ async function getRequestsForUser(userId) {
     .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
 }
 
-async function findMatchingRide(request) {
-  const dbReady = getDbReady();
-  const memoryStore = getMemoryStore();
-  await expireUnmatchedRequests();
-  if (!request || request.status !== 'pending' || request.match_id || isUnmatchedRequestExpired(request)) return null;
-
-  if (dbReady) {
-    const requestedTime = new Date(request.time).getTime();
-    const windowStart = new Date(requestedTime - 30 * 60 * 1000);
-    const windowEnd = new Date(requestedTime + 30 * 60 * 1000);
-
-    const candidates = await RideRequest.findAll({
-      where: {
-        status: 'pending',
-        time: {
-          [Op.between]: [windowStart, windowEnd],
-          [Op.gt]: new Date(Date.now() - REQUEST_EXPIRY_MS)
-        },
-        match_id: null
-      },
-      order: [['createdAt', 'ASC']]
-    });
-
-    const match = candidates.find((candidate) => {
-      return (
-        candidate.user_id !== request.user_id &&
-        !isUnmatchedRequestExpired(candidate) &&
-        locationsMatch(request, candidate, 'origin', 'origin') &&
-        locationsMatch(request, candidate, 'destination', 'destination')
-      );
-    });
-    if (!match) return null;
-
-    const createdMatch = await Match.create({ 
-      ride1_id: request.id, 
-      ride2_id: match.id,
-      user1_name: request.user_name,
-      user2_name: match.user_name,
-      user1_id: request.user_id,
-      user2_id: match.user_id,
-      status: 'pending',
-      pickup_location: request.origin,
-      dropoff_location: request.destination,
-      ride_time: request.time
-    });
-    await request.update({ status: 'matched', match_id: createdMatch.id });
-    await match.update({ status: 'matched', match_id: createdMatch.id });
-    const liveLocationState = await getLiveMatchState(createdMatch);
-    const requestPayload = normalizeRideParticipant(request);
-    const counterPartyPayload = normalizeRideParticipant(match);
-    const createdMatchPayload = normalizeRideParticipant(createdMatch);
- 
-    const matchPayload = {
-      ...createdMatchPayload,
-      matchId: createdMatch.id,
-      request: requestPayload,
-      counterParty: counterPartyPayload,
-      matchedRide: counterPartyPayload,
-      liveLocationState
-    };
-
-    //console.log(request.user_id, match.user_id, request, match, createdMatch.id);
-    emitToUser(request.user_id, 'matchFound', {
-      requestId: request.id,
-      matchId: createdMatch.id,
-      partnerInfo: counterPartyPayload,
-      origin: serializeRequest(request).origin,
-      destination: request.destination,
-      request: requestPayload,
-      counterParty: counterPartyPayload,
-      liveLocationState
-    });
-
-    emitToUser(match.user_id, 'matchFound', {
-      requestId: match.id,
-      matchId: createdMatch.id,
-      partnerInfo: requestPayload,
-      origin: serializeRequest(match).origin,
-      destination: match.destination,
-      request: counterPartyPayload,
-      counterParty: requestPayload,
-      liveLocationState
-    });
-    broadcast('rideMatched', { matchId: createdMatch.id, origin: request.origin, destination: request.destination });
-    await emitRequestUpdated(request);
-    await emitRequestUpdated(match);
-    return matchPayload;
-  }
-
-  const requestedTime = new Date(request.time).getTime();
-  const windowStart = new Date(requestedTime - 30 * 60 * 1000);
-  const windowEnd = new Date(requestedTime + 30 * 60 * 1000);
-
-  const candidates = memoryStore.rideRequests.filter((candidate) => {
-    const candidateTime = candidate.time instanceof Date ? candidate.time : new Date(candidate.time);
-    return (
-      locationsMatch(request, candidate, 'origin', 'origin') &&
-      locationsMatch(request, candidate, 'destination', 'destination') &&
-      candidate.status === 'pending' &&
-      !candidate.match_id &&
-      !isUnmatchedRequestExpired(candidate) &&
-      candidate.user_id !== request.user_id &&
-      candidateTime >= windowStart &&
-      candidateTime <= windowEnd
-    );
-  });
-
-  const match = candidates[0];
-  if (!match) return null;
-
-  const createdMatch = {
-    id: memoryStore.matches.length + 1,
-    ride1_id: request.id,
-    ride2_id: match.id,
-    user1_id: request.user_id,
-    user2_id: match.user_id,
-    status: 'pending',
-    pickup_location: request.origin,
-    dropoff_location: request.destination,
-    ride_time: request.time,
-    user1_confirmed: false,
-    user2_confirmed: false,
-    user1_completed_confirmed: false,
-    user2_completed_confirmed: false,
-    user1_payment_status: 'pending',
-    user2_payment_status: 'pending',
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
-  memoryStore.matches.push(createdMatch);
-  request.status = 'matched';
-  match.status = 'matched';
-  request.match_id = createdMatch.id;
-  match.match_id = createdMatch.id;
-
-  const requestPayload = normalizeRideParticipant(request);
-  const counterPartyPayload = normalizeRideParticipant(match);
-  const createdMatchPayload = normalizeRideParticipant(createdMatch);
-  const liveLocationState = await getLiveMatchState(createdMatch);
-  const matchPayload = {
-    ...createdMatchPayload,
-    matchId: createdMatch.id,
-    request: requestPayload,
-    counterParty: counterPartyPayload,
-    matchedRide: counterPartyPayload,
-    liveLocationState
-  };
-
-  emitToUser(request.user_id, 'matchFound', {
-    requestId: request.id,
-    matchId: createdMatch.id,
-    partnerInfo: counterPartyPayload,
-    origin: serializeRequest(request).origin,
-    destination: request.destination,
-    request: requestPayload,
-    counterParty: counterPartyPayload,
-    liveLocationState
-  });
-
-  emitToUser(match.user_id, 'matchFound', {
-    requestId: match.id,
-    matchId: createdMatch.id,
-    partnerInfo: requestPayload,
-    origin: serializeRequest(match).origin,
-    destination: match.destination,
-    request: counterPartyPayload,
-    counterParty: requestPayload,
-    liveLocationState
-  });
-  
-  broadcast('rideMatched', { matchId: createdMatch.id, origin: request.origin, destination: request.destination });
-  await emitRequestUpdated(request);
-  await emitRequestUpdated(match);
-  return matchPayload;
-}
-
 const rideController = {
   async findRide(req, res) {
     try {
@@ -681,13 +494,12 @@ const rideController = {
       });
 
       await cancelOpenSearches(user.id, request.id);
-      const match = await findMatchingRide(request);
 
       const requestPayload = normalizeRideParticipant(request);
       const serializedRequest = serializeRequest(request);
       emitToUser(user.id, 'requestCreated', serializedRequest);
       broadcast('requestCreated', serializedRequest);
-      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match });
+      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match: null });
     } catch (error) {
       console.error('Error finding ride:', error);
       res.status(500).json({ success: false, message: error.message });
