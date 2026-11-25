@@ -91,6 +91,10 @@ The worker caches the app shell, static assets, fonts, and icons, and uses netwo
 
 The worker can display and route Web Push payloads, but background push delivery is not yet connected to a server-side subscription provider. Production delivery requires a VAPID key pair, subscription persistence, and backend event integration; current live updates continue to use Socket.IO while the app is open. Background write queuing and periodic background refresh are not enabled: browser support is inconsistent, and chat messages currently use Socket.IO rather than an idempotent HTTP outbox.
 
+### Search engine sitemap
+
+The static sitemap is published at `/sitemap.xml` and referenced by `/robots.txt`. It currently lists the canonical public entry page only. Ride requests, groups, chats, payments, and tracking routes are omitted because they are user-specific application flows rather than public search landing pages.
+
 ## Running Locally
 
 Start backend and frontend in separate terminals:
