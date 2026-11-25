@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import LogoutConfirm from '../components/LogoutConfirm';
 import { onSocket } from '../services/socket';
@@ -13,15 +13,8 @@ export default function HomeScreen({ navigation, route }) {
   const [alerts, setAlerts] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loggingOut, setLoggingOut] = useState(false);
-  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { (async () => { setCurrentUser(await getStoredUser()) })() }, []);
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: 1800, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 0, duration: 1800, useNativeDriver: true })
-    ])).start();
-  }, []);
 
   useEffect(() => {
     const cleanups = [
@@ -39,7 +32,6 @@ export default function HomeScreen({ navigation, route }) {
     try { setLoggingOut(true); await logoutUser(); navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Auth' }] })); } finally { setLoggingOut(false); }
   }
 
-  const heroScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.015] });
   const initial = currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U';
 
   return (
@@ -79,19 +71,19 @@ export default function HomeScreen({ navigation, route }) {
         )}
 
         {/* Hero Card */}
-        <Animated.View style={{ transform: [{ scale: heroScale }] }} className="w-full rounded-3xl overflow-hidden mb-5 border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]/95 p-5 md:p-6 backdrop-blur-xl">
+        <View className="w-full rounded-3xl overflow-hidden mb-5 border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]/95 p-5 md:p-6 backdrop-blur-xl">
           <View className="flex-row items-center gap-2 mb-2">
             <View className="bg-[#00f2fe]/20 px-2.5 py-1 rounded-full border border-[#00f2fe]/40 flex-row items-center gap-1">
               {/*<ZapIcon size={12} color="#00f2fe" />*/}
-              <Text className="text-[#00f2fe] font-black text-[10px] uppercase tracking-widest">Real-time Mobility</Text>
+              <Text className="text-[#00f2fe] font-black text-[10px] uppercase tracking-widest">Ride together</Text>
             </View>
           </View>
-          <Text className="text-2xl font-black text-white mb-1 tracking-tight">Find people to share your ride</Text>
-          <Text className="text-[#ccebf5] text-xs leading-5">Post your route, review nearby riders, and decide who joins you.</Text>
-        </Animated.View>
+          <Text className="text-2xl font-black text-white mb-1 tracking-tight">Going somewhere?</Text>
+          <Text className="text-[#ccebf5] text-xs leading-5">Share your route and meet riders heading the same way.</Text>
+        </View>
 
         {/* Quick Action Buttons */}
-        <Text className="text-white text-base font-black mb-3 tracking-wide">What would you like to do?</Text>
+        <Text className="text-white text-base font-black mb-3 tracking-wide">Let’s get you moving</Text>
         <View className="mb-5 flex-col sm:flex-row gap-3">
           <TouchableOpacity
             className="flex-1 bg-[#00f2fe] p-4 rounded-2xl items-center justify-center shadow-lg border border-[#00f2fe]/50 active:scale-95 transition-all flex-row sm:flex-col gap-2 sm:gap-1"
@@ -100,8 +92,8 @@ export default function HomeScreen({ navigation, route }) {
           >
             <SearchIcon size={20} color="#050c1a" />
             <View className="items-start sm:items-center">
-              <Text className="text-[#050c1a] font-black text-base">Create a ride request</Text>
-              <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Post your route and find riders</Text>
+              <Text className="text-[#050c1a] font-black text-base">Find riders going my way</Text>
+              <Text className="text-[#050c1a]/70 font-semibold text-[10px]">Share a route and travel together</Text>
             </View>
           </TouchableOpacity>
 
@@ -112,8 +104,8 @@ export default function HomeScreen({ navigation, route }) {
           >
             <PlusIcon size={20} color="#ffffff" />
             <View className="items-start sm:items-center">
-              <Text className="text-white font-black text-base">Start a group ride</Text>
-              <Text className="text-white/80 font-semibold text-[10px]">Plan a ride with others</Text>
+              <Text className="text-white font-black text-base">Plan a group ride</Text>
+              <Text className="text-white/80 font-semibold text-[10px]">Bring your people along</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -124,7 +116,7 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <GroupsIcon size={18} color="#00f2fe" />
-          <Text className="text-[#00f2fe] font-extrabold text-base">Find a group ride</Text>
+          <Text className="text-[#00f2fe] font-extrabold text-base">Browse group rides</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -133,7 +125,7 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <SearchIcon size={18} color="#ff5e36" />
-          <Text className="text-[#ff8c73] font-extrabold text-base">Requests to join your ride</Text>
+          <Text className="text-[#ff8c73] font-extrabold text-base">Rider requests</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -142,7 +134,7 @@ export default function HomeScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <TrackingIcon size={18} color="#00f2fe" />
-          <Text className="text-white font-extrabold text-base">My rides and requests</Text>
+          <Text className="text-white font-extrabold text-base">My rides</Text>
         </TouchableOpacity>
 
         {/* Live Activity Feed */}

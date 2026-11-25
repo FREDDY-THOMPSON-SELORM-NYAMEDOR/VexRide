@@ -609,12 +609,14 @@ async function findMatchingRide(request) {
   const requestPayload = normalizeRideParticipant(request);
   const counterPartyPayload = normalizeRideParticipant(match);
   const createdMatchPayload = normalizeRideParticipant(createdMatch);
+  const liveLocationState = await getLiveMatchState(createdMatch);
   const matchPayload = {
     ...createdMatchPayload,
     matchId: createdMatch.id,
     request: requestPayload,
     counterParty: counterPartyPayload,
-    matchedRide: counterPartyPayload
+    matchedRide: counterPartyPayload,
+    liveLocationState
   };
 
   emitToUser(request.user_id, 'matchFound', {
@@ -625,7 +627,7 @@ async function findMatchingRide(request) {
     destination: request.destination,
     request: requestPayload,
     counterParty: counterPartyPayload,
-    liveLocationState: await getLiveMatchState(createdMatch)
+    liveLocationState
   });
 
   emitToUser(match.user_id, 'matchFound', {
@@ -636,13 +638,13 @@ async function findMatchingRide(request) {
     destination: match.destination,
     request: counterPartyPayload,
     counterParty: requestPayload,
-    liveLocationState: await getLiveMatchState(createdMatch)
+    liveLocationState
   });
   
   broadcast('rideMatched', { matchId: createdMatch.id, origin: request.origin, destination: request.destination });
   await emitRequestUpdated(request);
   await emitRequestUpdated(match);
-  return createdMatch;
+  return matchPayload;
 }
 
 const rideController = {
@@ -679,12 +681,13 @@ const rideController = {
       });
 
       await cancelOpenSearches(user.id, request.id);
+      const match = await findMatchingRide(request);
 
       const requestPayload = normalizeRideParticipant(request);
       const serializedRequest = serializeRequest(request);
       emitToUser(user.id, 'requestCreated', serializedRequest);
       broadcast('requestCreated', serializedRequest);
-      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match: null });
+      res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match });
     } catch (error) {
       console.error('Error finding ride:', error);
       res.status(500).json({ success: false, message: error.message });
@@ -835,6 +838,7 @@ const rideController = {
       else { Object.assign(connection, changes, { updatedAt: new Date() }); }
       if (status === 'accepted') {
         if (rideRequest) {
+          await cancelOpenSearches(connection.requester_id, rideRequest.id);
           if (wasConfirmedGroup) {
             if (dbReady) {
               await rideRequest.update({ status: 'grouped', group_owner_confirmed: false });

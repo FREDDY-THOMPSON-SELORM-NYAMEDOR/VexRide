@@ -44,10 +44,13 @@ npm run dev
 
 ### API Endpoints
 
-- `POST /findRide` — create a ride request and attempt a match
+- `POST /findRide` — create a request and automatically match a compatible pending ride
+- `GET /api/marketplace?userId=...&requestId=...` — find riders on similar routes
+- `POST /api/connections` and `PATCH /api/connections/:id` — request and accept a shared ride
+- `GET /api/requests` and `PATCH /api/requests/:id` — manage and finalize ride groups
+- `POST /confirmMatch` and `GET /activeRides/:userId` — confirm and view matched rides
 - `POST /processPayment` — initialize Paystack payment for a match
 - `GET /verifyPayment/:reference` — verify Paystack transaction status
-- `POST /bookRide` — mock ride booking for a confirmed match
 - `POST /createGroup` — create a live group
 - `GET /browseGroups` — list groups
 - `POST /joinGroup` — join a group

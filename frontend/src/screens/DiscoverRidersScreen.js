@@ -53,6 +53,18 @@ export default function DiscoverRidersScreen({ navigation, route }) {
     });
   }), [loadMarketplace, user?.id]);
 
+  useEffect(() => onSocket('matchFound', async ({ requestId, matchId, counterParty, liveLocationState }) => {
+    if (Number(requestId) !== Number(request?.id || request?._id)) return;
+    await clearSearchSession();
+    navigation.navigate('MatchResult', {
+      match: { id: matchId, counterParty, liveLocationState },
+      request,
+      origin: originLabel(request),
+      destination: request?.destination,
+      time: request?.time
+    });
+  }), [navigation, request]);
+
   useEffect(() => {
     const applyResponse = (status) => (connection) => {
       if (Number(connection.requester_id) !== Number(user?.id)) return;
@@ -92,8 +104,8 @@ export default function DiscoverRidersScreen({ navigation, route }) {
             <SearchIcon size={20} color="#00f2fe" />
           </View>
           <View className="flex-1">
-            <Text className="text-2xl font-black text-white">Find people for your ride</Text>
-            <Text className="text-[#8eb4c6] text-xs mt-1">Review these rides and ask to join one.</Text>
+            <Text className="text-2xl font-black text-white">Your ride match</Text>
+            <Text className="text-[#8eb4c6] text-xs mt-1">See who’s heading your way and ask to ride together.</Text>
           </View>
         </View>
 
