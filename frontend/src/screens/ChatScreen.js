@@ -72,29 +72,36 @@ export default function ChatScreen({ navigation, route }) {
     setActiveChatMatchId(chatRoomKey);
 
     let active = true;
+    const loadMessages = async () => {
+      try {
+        const result = await getJson(isGroupChat
+          ? `/api/requests/${rideRequestId}/chat?userId=${currentUser?.id}`
+          : `/match/${matchId}/chat`);
+        if (!active) return;
+        setMessages((existingMessages) => mergeMessages(existingMessages, result.messages || []));
+        setParticipants(result.participants || []);
+        resetUnread(chatRoomKey);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+        (result.messages || [])
+          .filter((message) => currentUser?.id && String(getSenderId(message)) !== String(currentUser.id) && !message.seen)
+          .forEach((message) => {
+            if (!message.id) return;
+            markMessageSeen({ matchId, messageId: message.id, userId: currentUser.id });
+            patchJson(`/messages/${message.id}/seen`, { userId: currentUser.id }).catch((error) => {
+              logError('Mark message seen', error);
+            });
+          });
+      } catch (error) {
+        if (active) logError('Load chat messages', error);
+      }
+    };
     const joinAndLoadMessages = () => {
       joinChatRoom(matchId, rideRequestId, async ({ success } = {}) => {
-        if (!active || !success) return;
-        try {
-          const result = await getJson(isGroupChat
-            ? `/api/requests/${rideRequestId}/chat?userId=${currentUser?.id}`
-            : `/match/${matchId}/chat`);
-          if (!active) return;
-          setMessages((existingMessages) => mergeMessages(existingMessages, result.messages || []));
-          setParticipants(result.participants || []);
-          resetUnread(chatRoomKey);
-          (result.messages || []).filter((message) => currentUser?.id && String(getSenderId(message)) !== String(currentUser.id) && !message.seen)
-            .forEach((message) => {
-              if (!message.id) return;
-              markMessageSeen({ matchId, messageId: message.id, userId: currentUser.id });
-              patchJson(`/messages/${message.id}/seen`, { userId: currentUser.id }).catch(() => {});
-            });
-        } catch (error) {
-          logError('Load chat messages', error);
-        }
+        if (active && success) loadMessages();
       });
     };
 
+    loadMessages();
     const cleanConnection = onSocketConnect(joinAndLoadMessages);
     joinUser(currentUser.id);
     if (socket.connected) joinAndLoadMessages();

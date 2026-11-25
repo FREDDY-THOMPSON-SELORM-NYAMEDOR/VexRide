@@ -3,12 +3,54 @@
   "name": "VexRide",
   "short_name": "Vex",
   "description": "Community-powered mobility platform connecting people through shared journeys.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait",
   "theme_color": "#ff5e36",
   "background_color": "#000000",
+  "categories": [
+    "travel",
+    "social",
+    "navigation",
+    "lifestyle"
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "shortcuts": [
+    {
+      "name": "Create Request",
+      "short_name": "Request",
+      "url": "/create-request",
+      "icons": [{ "src": "/icons/vex-96.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Discover Riders",
+      "short_name": "Discover",
+      "url": "/discover",
+      "icons": [{ "src": "/icons/vex-96.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Community",
+      "short_name": "Community",
+      "url": "/community",
+      "icons": [{ "src": "/icons/vex-96.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Messages",
+      "short_name": "Messages",
+      "url": "/messages",
+      "icons": [{ "src": "/icons/vex-96.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ],
   "icons": [
     { "src": "/icons/vex-72.png", "sizes": "72x72", "type": "image/png", "purpose": "any" },
     { "src": "/icons/vex-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },

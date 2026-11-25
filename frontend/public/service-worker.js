@@ -1,13 +1,16 @@
 const APP_CACHE_PREFIX = 'vexride-';
 const SHELL_CACHE = `${APP_CACHE_PREFIX}shell-v1`;
 const PRIVATE_CACHE = `${APP_CACHE_PREFIX}private-v1`;
+const ICON_URLS = [72, 96, 128, 144, 152, 180, 192, 384, 512]
+  .map((size) => `/icons/vex-${size}.png`)
+  .concat(['/icons/vex-512-maskable.png']);
 const SHELL_URLS = [
   '/',
   '/index.html',
   '/offline.html',
   '/manifest.json',
-  '/icons/vex-192.png',
-  '/icons/vex-512.png'
+  '/favicon.ico',
+  ...ICON_URLS
 ];
 
 async function precacheApplicationShell() {
@@ -17,11 +20,36 @@ async function precacheApplicationShell() {
   if (!page) return;
 
   const html = await page.text();
-  const assetUrls = Array.from(html.matchAll(/(?:src|href)=["']([^"']*\/_expo\/static\/[^"']+)["']/g))
-    .map((match) => new URL(match[1], self.location.origin).href);
-  await Promise.all(assetUrls.map(async (assetUrl) => {
-    const response = await fetch(assetUrl);
-    if (response.ok) await cache.put(assetUrl, response);
+  const assetUrls = new Set(Array.from(html.matchAll(/(?:src|href)=["']([^"']*\/_expo\/static\/[^"']+)["']/g))
+    .map((match) => new URL(match[1], self.location.origin).href));
+  const cssUrls = Array.from(assetUrls).filter((assetUrl) => /\.css(?:$|\?)/i.test(assetUrl));
+  await Promise.all(Array.from(assetUrls).map(async (assetUrl) => {
+    try {
+      const response = await fetch(assetUrl);
+      if (!response.ok) return;
+      await cache.put(assetUrl, response.clone());
+      if (!cssUrls.includes(assetUrl)) return;
+      const css = await response.text();
+      Array.from(css.matchAll(/url\((?:["']?)([^)"']+)(?:["']?)\)/g))
+        .map((match) => match[1].trim())
+        .filter((url) => !url.startsWith('data:'))
+        .map((url) => new URL(url, assetUrl).href)
+        .filter((url) => new URL(url).origin === self.location.origin)
+        .forEach((url) => assetUrls.add(url));
+    } catch (error) {
+      console.warn('VexRide could not precache an application asset:', error);
+    }
+  }));
+  const cssFontUrls = Array.from(assetUrls).filter((assetUrl) =>
+    /\.(?:woff2?|ttf|otf)(?:$|\?)/i.test(assetUrl)
+  );
+  await Promise.all(cssFontUrls.map(async (assetUrl) => {
+    try {
+      const response = await fetch(assetUrl);
+      if (response.ok) await cache.put(assetUrl, response);
+    } catch (error) {
+      console.warn('VexRide could not precache an app font:', error);
+    }
   }));
 }
 

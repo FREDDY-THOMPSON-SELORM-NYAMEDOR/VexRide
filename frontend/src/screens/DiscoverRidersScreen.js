@@ -20,7 +20,7 @@ function originLabel(request) {
 }
 
 export default function DiscoverRidersScreen({ navigation, route }) {
-  const request = route?.params?.request;
+  const [request, setRequest] = useState(route?.params?.request || null);
   const [riders, setRiders] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,11 +29,24 @@ export default function DiscoverRidersScreen({ navigation, route }) {
 
   const loadMarketplace = useCallback(async () => {
     const storedUser = await getStoredUser();
-    if (!storedUser?.id || !request?._id) return;
+    if (!storedUser?.id) return;
     setUser(storedUser);
-    const result = await getJson(`/api/marketplace?userId=${storedUser.id}&requestId=${request._id}`);
+    let activeRequest = request;
+    if (!activeRequest?._id && !activeRequest?.id) {
+      const requestResult = await getJson(`/api/requests?userId=${storedUser.id}`);
+      activeRequest = (requestResult.requests || []).find((entry) =>
+        ['pending', 'connection_requested', 'partially_grouped'].includes(entry.status)
+      );
+      if (activeRequest) setRequest(activeRequest);
+    }
+    const requestId = activeRequest?._id || activeRequest?.id;
+    if (!requestId) {
+      setRiders([]);
+      return;
+    }
+    const result = await getJson(`/api/marketplace?userId=${storedUser.id}&requestId=${requestId}`);
     setRiders(result.requests || []);
-  }, [request?._id]);
+  }, [request?._id, request?.id]);
 
   useEffect(() => {
     let active = true;

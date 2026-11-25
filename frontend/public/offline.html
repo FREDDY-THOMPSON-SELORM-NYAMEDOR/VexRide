@@ -13,15 +13,24 @@
       img { width: 76px; height: 76px; margin-bottom: 20px; border-radius: 20px; }
       h1 { margin: 0 0 10px; font-size: clamp(24px, 7vw, 32px); }
       p { margin: 0; color: #c9e5f4; line-height: 1.6; }
+      .status { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; color: #ff9b83; font-size: 13px; font-weight: 700; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5e36; box-shadow: 0 0 12px #ff5e36aa; }
       button { min-height: 48px; margin-top: 24px; padding: 0 22px; border: 0; border-radius: 16px; background: #ff5e36; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
     </style>
   </head>
   <body>
     <main>
       <img src="/icons/vex-192.png" alt="" />
-      <h1>You are currently offline</h1>
-      <p>Reconnect to continue your journey. Previously opened pages and cached conversations may still be available.</p>
+      <h1>You are offline</h1>
+      <p>VexRide will reconnect automatically. Previously loaded pages and saved ride details may still be available.</p>
+      <div class="status" role="status"><span class="dot"></span><span id="connection-status">Waiting for connection</span></div>
       <button type="button" onclick="window.location.reload()">Try again</button>
     </main>
+    <script>
+      window.addEventListener('online', () => {
+        document.getElementById('connection-status').textContent = 'Back online — reconnecting';
+        window.location.reload();
+      });
+    </script>
   </body>
 </html>
