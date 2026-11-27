@@ -56,6 +56,12 @@ npm run dev
 - `POST /joinGroup` — join a group
 - `POST /bookGroupRide` — book a group ride mock
 
+### Known limitation: concurrent ride-connection updates
+
+Ride-connection availability and acceptance checks currently run in application code without a database transaction or row-level locks. Sequential checks prevent many stale invitations, but simultaneous send/accept actions can still race and create conflicting ride intents.
+
+Future hardening should perform the checks and related connection/ride-request status updates in short Sequelize transactions, locking the involved user rows in a consistent order and rechecking state before writing. Emit Socket.IO events only after the transaction commits. Consider a partial unique database index for pending outgoing requests only if the product rule is to allow at most one such request per user.
+
 ## Frontend
 
 ### Setup

@@ -7,7 +7,10 @@ async function requestJson(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, options);
   const data = await response.json();
   if (!response.ok || !data.success) {
-    throw new Error(data.message || 'Request failed');
+    const error = new Error(data.message || 'Request failed');
+    error.code = data.code;
+    error.activeRide = data.activeRide;
+    throw error;
   }
   return data;
 }

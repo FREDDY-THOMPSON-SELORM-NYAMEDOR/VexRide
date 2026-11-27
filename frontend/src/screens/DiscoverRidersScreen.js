@@ -58,13 +58,12 @@ export default function DiscoverRidersScreen({ navigation, route }) {
     return () => { active = false; };
   }, [loadMarketplace]);
 
-  useEffect(() => onSocket('requestCreated', (created) => {
-    if (Number(created.userId) === Number(user?.id)) return;
+  useEffect(() => onSocket('marketplaceUpdated', () => {
     loadMarketplace().catch((loadError) => {
       setError(friendlyError(loadError, 'Could not refresh nearby ride requests.'));
       logError('Refresh marketplace', loadError);
     });
-  }), [loadMarketplace, user?.id]);
+  }), [loadMarketplace]);
 
   useEffect(() => {
     const applyResponse = (status) => (connection) => {
@@ -83,18 +82,70 @@ export default function DiscoverRidersScreen({ navigation, route }) {
     return () => { cleanAccepted(); cleanDeclined(); };
   }, [navigation, user?.id]);
 
-  async function connect(rider) {
-    if (!user?.id || !rider?.id) return;
+  function refreshMarketplace() {
+    loadMarketplace().catch((loadError) => {
+      setError(friendlyError(loadError, 'Could not refresh nearby ride requests.'));
+      logError('Refresh marketplace', loadError);
+    });
+  }
+
+  async function submitConnectionRequest(targetRequestId, rider, joiningWith, visitedRequestIds) {
+    const sourceRequestId = request?._id || request?.id;
+    if (!user?.id || !targetRequestId || !rider?.id || !sourceRequestId) return;
     try {
       setConnectingId(rider.id);
-      await postJson('/api/connections', { requestId: rider.id, userId: user.id });
-      setRiders((current) => current.map((entry) => entry.id === rider.id ? { ...entry, connectionStatus: 'sent' } : entry));
+      await postJson('/api/connections', {
+        requestId: targetRequestId,
+        sourceRequestId,
+        userId: user.id,
+        ...(joiningWith ? { message: `I would like to join this ride with ${joiningWith}.` } : {})
+      });
+      setRiders((current) => current.map((entry) => Number(entry.id) === Number(targetRequestId)
+        ? { ...entry, connectionStatus: 'sent' }
+        : entry));
+      if (joiningWith) refreshMarketplace();
     } catch (connectError) {
+      if (connectError.code === 'OWNER_HAS_ACTIVE_RIDE' && connectError.activeRide) {
+        const activeRide = connectError.activeRide;
+        const nextRequestId = Number(activeRide.requestId);
+        const loopsToPreviousRide = visitedRequestIds.has(nextRequestId);
+        const canJoin = activeRide.canJoin && !loopsToPreviousRide;
+        const rideStatus = activeRide.connectionStatus === 'accepted'
+          ? 'is riding with'
+          : 'has requested to join';
+        const message = loopsToPreviousRide
+          ? 'These riders have overlapping requests that cannot be joined together right now. Choose another available request.'
+          : canJoin
+            ? `${activeRide.joiningUserName} ${rideStatus} ${activeRide.rideOwnerName} on a ride to ${activeRide.destination} at ${formatTime(activeRide.time)}. You can ask that ride owner to approve your request separately.`
+            : `${activeRide.joiningUserName} is requesting to join another ride, but that ride is not available for your departure time. Choose another available request.`;
+        const buttons = [{
+          text: 'Choose another request',
+          style: 'cancel',
+          onPress: refreshMarketplace
+        }];
+        if (canJoin) {
+          buttons.push({
+            text: 'Request to join with them',
+            onPress: () => {
+              const nextVisitedRequestIds = new Set(visitedRequestIds);
+              nextVisitedRequestIds.add(Number(targetRequestId));
+              void submitConnectionRequest(nextRequestId, rider, activeRide.joiningUserName, nextVisitedRequestIds);
+            }
+          });
+        }
+        Alert.alert('This rider is joining another ride', message, buttons);
+        return;
+      }
       Alert.alert('Connection request', friendlyError(connectError, 'Could not send the invitation.'));
       logError('Send connection request', connectError);
     } finally {
       setConnectingId(null);
     }
+  }
+
+  async function connect(rider) {
+    if (!user?.id || !rider?.id) return;
+    await submitConnectionRequest(Number(rider.id), rider, null, new Set([Number(rider.id)]));
   }
 
   return (

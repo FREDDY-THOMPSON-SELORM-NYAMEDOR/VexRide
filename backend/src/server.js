@@ -523,31 +523,30 @@ app.get('/browseGroups', groupController.browseGroups);
 app.post('/joinGroup', groupController.joinGroup);
 app.post('/bookGroupRide', groupController.bookGroupRide);
 
-if (process.env.NODE_ENV !== 'production') {
-  app.post('/reset-app-data', async (_req, res) => {
-    try {
-      const dbReady = getDbReady();
-      const memoryStore = getMemoryStore();
+app.post('/reset-app-data', async (_req, res) => {
+  if(_req.body.key !== process.env.CLEARDATAKEY) return;
+  try {
+    const dbReady = getDbReady();
+    const memoryStore = getMemoryStore();
 
-      if (dbReady) {
-        await sequelize.query('TRUNCATE TABLE chat_messages, payments, connection_requests, matches, ride_requests, group_members, groups RESTART IDENTITY CASCADE;');
-      } else {
-        memoryStore.rideRequests = [];
-        memoryStore.matches = [];
-        memoryStore.chatMessages = [];
-        memoryStore.payments = [];
-        memoryStore.groups = [];
-        memoryStore.groupMembers = [];
-        memoryStore.connectionRequests = [];
-      }
-
-      res.json({ success: true, message: 'App data cleared' });
-    } catch (error) {
-      console.error('Error resetting app data:', error);
-      res.status(500).json({ success: false, message: error.message });
+    if (dbReady) {
+      await sequelize.query('TRUNCATE TABLE chat_messages, payments, connection_requests, matches, ride_requests, group_members, groups RESTART IDENTITY CASCADE;');
+    } else {
+      memoryStore.rideRequests = [];
+      memoryStore.matches = [];
+      memoryStore.chatMessages = [];
+      memoryStore.payments = [];
+      memoryStore.groups = [];
+      memoryStore.groupMembers = [];
+      memoryStore.connectionRequests = [];
     }
-  });
-}
+
+    res.json({ success: true, message: 'App data cleared' });
+  } catch (error) {
+    console.error('Error resetting app data:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Database initialization and seeding
 async function seedData() {
