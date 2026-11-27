@@ -157,7 +157,7 @@ const groupController = {
       if (!dbReady) memoryStore.groupMembers.push(membership);
 
       const groupForUser = await serializeGroup(group, userId);
-      broadcast('groupCreated', { group: groupForUser });
+      broadcast('groupCreated', { group: await serializeGroup(group) });
       res.json({ success: true, group: groupForUser, membership });
     } catch (error) {
       console.error('Error creating group:', error);
@@ -220,7 +220,7 @@ const groupController = {
       if (!dbReady) memoryStore.groupMembers.push(membership);
 
       const groupForUser = await serializeGroup(group, userId);
-      broadcast('groupJoined', { groupId, userId, membership, group: groupForUser });
+      broadcast('groupJoined', { groupId, group: await serializeGroup(group) });
       res.json({ success: true, membership, group: groupForUser, paymentAmount: getGroupShareAmount(group) });
     } catch (error) {
       console.error('Error browsing groups:', error);

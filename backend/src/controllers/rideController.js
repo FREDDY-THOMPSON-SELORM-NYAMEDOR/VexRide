@@ -5,7 +5,9 @@ const { Op } = require('sequelize');
 
 let io;
 const REQUEST_EXPIRY_MS = 60 * 60 * 1000;
+const MAX_DEPARTURE_TIME_DIFFERENCE_MS = 60 * 60 * 1000;
 const SEARCHABLE_REQUEST_STATUSES = ['pending', 'connection_requested', 'partially_grouped'];
+const JOINABLE_REQUEST_STATUSES = [...SEARCHABLE_REQUEST_STATUSES, 'grouped', 'matched'];
 
 function setIO(socketIO) {
   io = socketIO;
@@ -21,6 +23,14 @@ function isUnmatchedRequestExpired(request, now = Date.now()) {
     !request.match_id &&
     Number.isFinite(requestedTime) &&
     requestedTime + REQUEST_EXPIRY_MS <= now;
+}
+
+function areDepartureTimesWithinWindow(firstTime, secondTime) {
+  const firstDeparture = new Date(firstTime).getTime();
+  const secondDeparture = new Date(secondTime).getTime();
+  return Number.isFinite(firstDeparture) &&
+    Number.isFinite(secondDeparture) &&
+    Math.abs(firstDeparture - secondDeparture) <= MAX_DEPARTURE_TIME_DIFFERENCE_MS;
 }
 
 async function expireUnmatchedRequests(now = Date.now()) {
@@ -100,6 +110,49 @@ async function findRequestById(requestId, userId) {
   return getMemoryStore().rideRequests.find((entry) =>
     Number(entry.id) === numericRequestId && (numericUserId === null || Number(entry.user_id) === numericUserId)
   ) || null;
+}
+
+async function findActiveOutgoingRide(userId) {
+  const dbReady = getDbReady();
+  const memoryStore = getMemoryStore();
+  const connections = dbReady
+    ? await ConnectionRequest.findAll({
+        where: { requester_id: Number(userId), status: { [Op.in]: ['sent', 'accepted'] } },
+        order: [['updatedAt', 'DESC']]
+      })
+    : memoryStore.connectionRequests
+      .filter((entry) => Number(entry.requester_id) === Number(userId) && ['sent', 'accepted'].includes(entry.status))
+      .sort((first, second) => new Date(second.updatedAt) - new Date(first.updatedAt));
+
+  for (const connection of connections) {
+    const rideRequest = await findRequestById(connection.ride_request_id);
+    if (rideRequest && JOINABLE_REQUEST_STATUSES.includes(rideRequest.status) && !isUnmatchedRequestExpired(rideRequest)) {
+      return { connection, rideRequest };
+    }
+  }
+  return null;
+}
+
+async function serializeActiveRideChoice(activeRide, joiningUserId, sourceRequest) {
+  const [joiningUser, rideOwner] = await Promise.all([
+    getUserRecord(joiningUserId),
+    getUserRecord(activeRide.rideRequest.user_id)
+  ]);
+  const rideRequest = activeRide.rideRequest;
+  return {
+    requestId: Number(rideRequest.id),
+    joiningUserId: Number(joiningUserId),
+    joiningUserName: joiningUser?.name || rideRequest.user_name || 'Rider',
+    rideOwnerId: Number(rideRequest.user_id),
+    rideOwnerName: rideOwner?.name || rideRequest.user_name || 'Rider',
+    origin: rideRequest.origin,
+    destination: rideRequest.destination,
+    time: rideRequest.time,
+    connectionStatus: activeRide.connection.status,
+    canJoin: JOINABLE_REQUEST_STATUSES.includes(rideRequest.status) &&
+      !isUnmatchedRequestExpired(rideRequest) &&
+      areDepartureTimesWithinWindow(sourceRequest.time, rideRequest.time)
+  };
 }
 
 async function emitRequestUpdated(request) {
@@ -207,31 +260,6 @@ async function cancelOpenSearches(userId, exceptRequestId) {
   }
 }
 
-async function hasUnfinishedRide(userId) {
-  const numericUserId = Number(userId);
-  const dbReady = getDbReady();
-  const memoryStore = getMemoryStore();
-  const acceptedConnections = dbReady
-    ? await ConnectionRequest.findAll({ where: { requester_id: numericUserId, status: 'accepted' } })
-    : memoryStore.connectionRequests.filter((entry) => Number(entry.requester_id) === numericUserId && entry.status === 'accepted');
-
-  for (const connection of acceptedConnections) {
-    const match = dbReady
-      ? (connection.match_id ? await Match.findByPk(connection.match_id) : null)
-      : memoryStore.matches.find((entry) => Number(entry.id) === Number(connection.match_id));
-    if (!match || match.status !== 'completed') return true;
-  }
-
-  const pairMatches = dbReady
-    ? await Match.findAll({ where: { status: 'confirmed', [Op.or]: [{ user1_id: numericUserId }, { user2_id: numericUserId }] } })
-    : memoryStore.matches.filter((entry) => entry.status === 'confirmed' && (Number(entry.user1_id) === numericUserId || Number(entry.user2_id) === numericUserId));
-  return pairMatches.length > 0;
-}
-
-function broadcast(event, payload) {
-  if (io) io.emit(event, payload);
-}
-
 function distanceMeters(firstLatitude, firstLongitude, secondLatitude, secondLongitude) {
   const values = [firstLatitude, firstLongitude, secondLatitude, secondLongitude].map(Number);
   if (values.some((value) => !Number.isFinite(value))) return Number.POSITIVE_INFINITY;
@@ -261,6 +289,10 @@ async function getMarketplaceRequests(userId, requestId) {
     ? await RideRequest.findOne({ where: { id: Number(requestId), user_id: Number(userId) } })
     : memoryStore.rideRequests.find((entry) => Number(entry.id) === Number(requestId) && Number(entry.user_id) === Number(userId));
   if (!ownRequest || !SEARCHABLE_REQUEST_STATUSES.includes(ownRequest.status) || isUnmatchedRequestExpired(ownRequest)) return null;
+  const ownDepartureTime = new Date(ownRequest.time).getTime();
+  if (!Number.isFinite(ownDepartureTime)) return [];
+  const departureWindowStart = new Date(ownDepartureTime - MAX_DEPARTURE_TIME_DIFFERENCE_MS);
+  const departureWindowEnd = new Date(ownDepartureTime + MAX_DEPARTURE_TIME_DIFFERENCE_MS);
 
   const candidates = dbReady
     ? await RideRequest.findAll({
@@ -268,7 +300,10 @@ async function getMarketplaceRequests(userId, requestId) {
           user_id: { [Op.ne]: Number(userId) },
           status: { [Op.in]: SEARCHABLE_REQUEST_STATUSES },
           match_id: null,
-          time: { [Op.gt]: new Date(Date.now() - REQUEST_EXPIRY_MS) }
+          time: {
+            [Op.gte]: new Date(Math.max(Date.now() - REQUEST_EXPIRY_MS, departureWindowStart.getTime())),
+            [Op.lte]: departureWindowEnd
+          }
         },
         order: [['time', 'ASC']]
       })
@@ -286,6 +321,7 @@ async function getMarketplaceRequests(userId, requestId) {
   const results = [];
   for (const candidate of candidates) {
     if (!SEARCHABLE_REQUEST_STATUSES.includes(candidate.status) || isUnmatchedRequestExpired(candidate)) continue;
+    if (!areDepartureTimesWithinWindow(ownRequest.time, candidate.time)) continue;
     if (activeOutgoingRequesterIds.has(Number(candidate.user_id))) continue;
     const existingConnection = dbReady
       ? await ConnectionRequest.findOne({ where: { ride_request_id: candidate.id, requester_id: Number(userId) } })
@@ -310,6 +346,18 @@ async function getMarketplaceRequests(userId, requestId) {
     });
   }
   return results.sort((first, second) => second.compatibility - first.compatibility);
+}
+
+async function notifyCompatibleMarketplaceUsers(request) {
+  const compatibleRequests = await getMarketplaceRequests(request.user_id, request.id);
+  const recipientUserIds = new Set(
+    compatibleRequests
+      .map((candidate) => Number(candidate.userId))
+      .filter((userId) => userId && userId !== Number(request.user_id))
+  );
+  recipientUserIds.forEach((userId) => {
+    emitToUser(userId, 'marketplaceUpdated', { requestId: Number(request.id) });
+  });
 }
 
 async function createConnectionRecord({ rideRequestId, requesterId, recipientId, message }) {
@@ -498,7 +546,7 @@ const rideController = {
       const requestPayload = normalizeRideParticipant(request);
       const serializedRequest = serializeRequest(request);
       emitToUser(user.id, 'requestCreated', serializedRequest);
-      broadcast('requestCreated', serializedRequest);
+      await notifyCompatibleMarketplaceUsers(request);
       res.json({ success: true, request: { ...requestPayload, ...serializedRequest }, match: null });
     } catch (error) {
       console.error('Error finding ride:', error);
@@ -522,15 +570,39 @@ const rideController = {
 
   async sendConnectionRequest(req, res) {
     try {
-      const { requestId, userId, message } = req.body;
+      const { requestId, sourceRequestId, userId, message } = req.body;
       const requesterId = Number(userId);
       const targetRequestId = Number(requestId);
-      if (!requesterId || !targetRequestId) return res.status(400).json({ success: false, message: 'requestId and userId are required' });
+      const requesterRideRequestId = Number(sourceRequestId);
+      if (!requesterId || !targetRequestId || !requesterRideRequestId) {
+        return res.status(400).json({ success: false, message: 'requestId, sourceRequestId, and userId are required' });
+      }
 
       const targetRequest = await findRequestById(targetRequestId);
       if (!targetRequest || Number(targetRequest.user_id) === requesterId) return res.status(404).json({ success: false, message: 'Marketplace request not found' });
-      if (!['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched'].includes(targetRequest.status)) {
+      if (!JOINABLE_REQUEST_STATUSES.includes(targetRequest.status)) {
         return res.status(409).json({ success: false, message: 'This request is no longer accepting connections' });
+      }
+      const sourceRequest = await findRequestById(requesterRideRequestId, requesterId);
+      if (!sourceRequest || !SEARCHABLE_REQUEST_STATUSES.includes(sourceRequest.status) || isUnmatchedRequestExpired(sourceRequest)) {
+        return res.status(409).json({ success: false, message: 'Your ride request is no longer available' });
+      }
+
+      const activeRide = await findActiveOutgoingRide(targetRequest.user_id);
+      if (activeRide) {
+        const activeRideChoice = await serializeActiveRideChoice(activeRide, targetRequest.user_id, sourceRequest);
+        return res.status(409).json({
+          success: false,
+          code: 'OWNER_HAS_ACTIVE_RIDE',
+          message: activeRideChoice.canJoin
+            ? 'This rider is already requesting to join another ride.'
+            : 'This rider is requesting to join another ride that is not available for your departure time.',
+          activeRide: activeRideChoice
+        });
+      }
+
+      if (!areDepartureTimesWithinWindow(sourceRequest.time, targetRequest.time)) {
+        return res.status(409).json({ success: false, message: 'Ride departures must be within one hour of each other' });
       }
 
       const dbReady = getDbReady();
@@ -557,9 +629,6 @@ const rideController = {
         ? await ConnectionRequest.findOne({ where: { ride_request_id: targetRequestId, requester_id: requesterId } })
         : memoryStore.connectionRequests.find((entry) => Number(entry.ride_request_id) === targetRequestId && Number(entry.requester_id) === requesterId);
       if (existing && ['sent', 'accepted'].includes(existing.status)) return res.status(409).json({ success: false, message: 'Connection request already exists', connection: existing });
-      if (await hasUnfinishedRide(requesterId)) {
-        return res.status(409).json({ success: false, message: 'Complete your current ride before joining another' });
-      }
       const connection = existing
         ? (dbReady
           ? await existing.update({ recipient_id: Number(targetRequest.user_id), message: message || null, status: 'sent', requester_confirmed: false })
@@ -579,6 +648,7 @@ const rideController = {
         rideRequest: serializeRequest(targetRequest)
       };
       emitToUser(Number(targetRequest.user_id), 'connectionRequested', notification);
+      await notifyCompatibleMarketplaceUsers(targetRequest);
       const connectionPayload = connection.get ? connection.get({ plain: true }) : connection;
       res.status(201).json({ success: true, connection: { ...connectionPayload, ...notification } });
     } catch (error) {
@@ -630,11 +700,18 @@ const rideController = {
       if (status === 'declined' && Number(connection.recipient_id) !== userId) return res.status(403).json({ success: false, message: 'Only the ride owner can decline a connection request' });
       if (status === 'cancelled' && Number(connection.requester_id) !== userId) return res.status(403).json({ success: false, message: 'Only the joining rider can leave this group' });
       const rideRequest = await findRequestById(connection.ride_request_id);
+      if (status === 'accepted') {
+        const ownerActiveRide = await findActiveOutgoingRide(connection.recipient_id);
+        if (ownerActiveRide) {
+          return res.status(409).json({
+            success: false,
+            code: 'OWNER_HAS_ACTIVE_RIDE',
+            message: 'You are already requesting to join another ride. Resolve that request before accepting a new rider.'
+          });
+        }
+      }
       if (status === 'accepted' && (!rideRequest || !['pending', 'connection_requested', 'partially_grouped', 'grouped', 'matched'].includes(rideRequest.status))) {
         return res.status(409).json({ success: false, message: 'This ride group is no longer accepting riders' });
-      }
-      if (status === 'accepted' && await hasUnfinishedRide(connection.requester_id)) {
-        return res.status(409).json({ success: false, message: 'Complete your current ride before joining another' });
       }
       if (status !== 'accepted' && status !== 'declined' && connection.status !== 'sent' && connection.status !== 'accepted') {
         return res.status(409).json({ success: false, message: 'This connection request is no longer active' });
@@ -680,6 +757,14 @@ const rideController = {
       }
       if (status === 'cancelled' && rideRequest && wasAccepted) {
         await emitRequestUpdated(rideRequest);
+      }
+      if (status === 'declined' || status === 'cancelled') {
+        const requesterRequests = await getRequestsForUser(connection.requester_id);
+        for (const requesterRequest of requesterRequests) {
+          if (SEARCHABLE_REQUEST_STATUSES.includes(requesterRequest.status) && !isUnmatchedRequestExpired(requesterRequest)) {
+            await notifyCompatibleMarketplaceUsers(requesterRequest);
+          }
+        }
       }
       const plainConnection = connection.get ? connection.get({ plain: true }) : { ...connection };
       const recipient = await getUserRecord(connection.recipient_id);
