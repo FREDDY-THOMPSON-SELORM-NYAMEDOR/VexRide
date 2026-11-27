@@ -1,20 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import LogoutConfirm from '../components/LogoutConfirm';
 import { onSocket } from '../services/socket';
 import { getStoredUser, logoutUser } from '../services/user';
 import ScreenLayout from '../components/ScreenLayout';
 import { SearchIcon, PlusIcon, GroupsIcon, LogoutIcon, ZapIcon, CarIcon, TrackingIcon } from '../components/Icons';
+import { logError } from '../services/errorHandling';
 
 const heroImage = require('../../assets/images/vex_home_bg_1784946351687.jpg');
 
 export default function HomeScreen({ navigation, route }) {
   const [alerts, setAlerts] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  useEffect(() => { (async () => { setCurrentUser(await getStoredUser()) })() }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoadingProfile(true);
+    getStoredUser()
+      .then((user) => {
+        if (active) setCurrentUser(user);
+      })
+      .catch((error) => {
+        if (active) setCurrentUser(null);
+        logError('Load home profile', error);
+      })
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+
+    return () => { active = false; };
+  }, []));
 
   useEffect(() => {
     const cleanups = [
@@ -38,37 +56,58 @@ export default function HomeScreen({ navigation, route }) {
     <ScreenLayout navigation={navigation} route={route} bgImage={heroImage}>
       <View className="flex-1 w-full max-w-2xl self-center">
 
-        {/* User Profile Bar */}
-        {currentUser && (
-          <View className="bg-[#0b172a]/95 rounded-3xl p-4 mb-4 border border-[#00f2fe]/20 shadow-xl flex-row justify-between items-center backdrop-blur-xl">
-            <View className="flex-row items-center gap-3 flex-1 min-w-0 mr-2">
-              <View className="w-11 h-11 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/50 items-center justify-center shadow-md flex-shrink-0">
-                <Text className="text-[#00f2fe] font-black text-lg">{initial}</Text>
+        <View className="bg-[#0b172a]/95 rounded-3xl p-4 mb-4 border border-[#00f2fe]/20 shadow-xl flex-col sm:flex-row justify-between items-center gap-3 backdrop-blur-xl">
+          {currentUser ? (
+            <>
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 mr-2">
+                <View className="w-11 h-11 rounded-2xl bg-[#00f2fe]/20 border border-[#00f2fe]/50 items-center justify-center shadow-md flex-shrink-0">
+                  <Text className="text-[#00f2fe] font-black text-lg">{initial}</Text>
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="text-white text-base font-extrabold" numberOfLines={1}>{currentUser.name}</Text>
+                  <Text className="text-[#8eb4c6] text-xs font-semibold" numberOfLines={1}>{currentUser.email}</Text>
+                </View>
               </View>
-              <View className="flex-1 min-w-0">
-                <Text className="text-white text-base font-extrabold" numberOfLines={1}>{currentUser.name}</Text>
-                <Text className="text-[#8eb4c6] text-xs font-semibold" numberOfLines={1}>{currentUser.email}</Text>
+              <LogoutConfirm onLogout={handleLogout} loading={loggingOut} renderTrigger={({ open, disabled }) => (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Log out"
+                  className="self-end sm:self-auto bg-[#ff5e36]/15 px-3.5 py-2 rounded-2xl border border-[#ff5e36]/40 flex-row items-center gap-1.5 flex-shrink-0"
+                  onPress={open}
+                  disabled={disabled}
+                >
+                  {disabled ? (
+                    <ActivityIndicator color="#ff5e36" size="small" />
+                  ) : (
+                    <>
+                      <LogoutIcon size={14} color="#ff5e36" />
+                      <Text className="text-[#ff5e36] font-bold text-xs">Logout</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )} />
+            </>
+          ) : (
+            <>
+              <View className="flex-1 self-start">
+                <Text className="text-white text-base font-extrabold">
+                  {loadingProfile ? 'Loading profile…' : 'You’re not signed in'}
+                </Text>
+                <Text className="text-[#8eb4c6] text-xs font-semibold mt-1">
+                  {loadingProfile ? 'Checking your account' : 'Sign in to manage your rides'}
+                </Text>
               </View>
-            </View>
-
-            <LogoutConfirm onLogout={handleLogout} loading={loggingOut} renderTrigger={({ open, disabled }) => (
               <TouchableOpacity
-                className="bg-[#ff5e36]/15 px-3.5 py-2 rounded-2xl border border-[#ff5e36]/40 flex-row items-center gap-1.5 flex-shrink-0"
-                onPress={open}
-                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityLabel="Log in"
+                className="self-end sm:self-auto bg-[#00f2fe] px-5 py-2.5 rounded-2xl"
+                onPress={() => navigation.navigate('Auth')}
               >
-                {disabled ? (
-                  <ActivityIndicator color="#ff5e36" size="small" />
-                ) : (
-                  <>
-                    <LogoutIcon size={14} color="#ff5e36" />
-                    <Text className="text-[#ff5e36] font-bold text-xs">Logout</Text>
-                  </>
-                )}
+                <Text className="text-[#050c1a] font-black text-sm">Log in</Text>
               </TouchableOpacity>
-            )} />
-          </View>
-        )}
+            </>
+          )}
+        </View>
 
         {/* Hero Card */}
         <View className="w-full rounded-3xl overflow-hidden mb-5 border border-[#00f2fe]/30 shadow-2xl bg-[#0b172a]/95 p-5 md:p-6 backdrop-blur-xl">
